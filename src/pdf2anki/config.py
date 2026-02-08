@@ -1,0 +1,123 @@
+"""Configuration management for pdf2anki.
+
+Loads config from YAML file with environment variable overrides.
+Priority: env vars > YAML > defaults.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any
+
+import yaml
+from pydantic import BaseModel, Field
+
+
+_DEFAULT_CARD_TYPES = [
+    "qa",
+    "term_definition",
+    "summary_point",
+    "cloze",
+    "reversible",
+    "sequence",
+    "compare_contrast",
+]
+
+# Mapping of env var names to (config field, type converter)
+_ENV_OVERRIDES: dict[str, tuple[str, type]] = {
+    "PDF2ANKI_MODEL": ("model", str),
+    "PDF2ANKI_BUDGET_LIMIT": ("cost_budget_limit", float),
+}
+
+
+class AppConfig(BaseModel, frozen=True):
+    """Application configuration. Immutable."""
+
+    # Claude API
+    model: str = "claude-sonnet-4-5-20250929"
+    max_tokens: int = Field(default=8192, gt=0)
+
+    # Quality pipeline
+    quality_confidence_threshold: float = Field(default=0.90, ge=0.0, le=1.0)
+    quality_enable_critique: bool = True
+    quality_max_critique_rounds: int = Field(default=2, ge=0)
+
+    # Output
+    output_format: str = "tsv"
+    output_encoding: str = "utf-8"
+
+    # Cards
+    cards_max_cards: int = Field(default=50, gt=0)
+    cards_card_types: list[str] = Field(default_factory=lambda: list(_DEFAULT_CARD_TYPES))
+    cards_bloom_filter: list[str] = Field(default_factory=list)
+
+    # Cost
+    cost_budget_limit: float = Field(default=1.00, ge=0.0)
+    cost_warn_at: float = Field(default=0.80, ge=0.0, le=1.0)
+
+    # OCR
+    ocr_enabled: bool = False
+    ocr_lang: str = "jpn+eng"
+
+
+def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
+    """Flatten nested YAML structure to flat config fields.
+
+    Example: {"quality": {"confidence_threshold": 0.9}}
+    becomes: {"quality_confidence_threshold": 0.9}
+    """
+    flat: dict[str, Any] = {}
+    for key, value in data.items():
+        if isinstance(value, dict):
+            for sub_key, sub_value in value.items():
+                flat[f"{key}_{sub_key}"] = sub_value
+        else:
+            flat[key] = value
+    return flat
+
+
+def _apply_env_overrides(config_dict: dict[str, Any]) -> dict[str, Any]:
+    """Apply environment variable overrides to config dict."""
+    result = dict(config_dict)
+    for env_var, (field_name, converter) in _ENV_OVERRIDES.items():
+        env_value = os.environ.get(env_var)
+        if env_value is not None:
+            result[field_name] = converter(env_value)
+    return result
+
+
+def load_config(config_path: str | None = None) -> AppConfig:
+    """Load configuration from YAML file with env var overrides.
+
+    Priority: env vars > YAML file > defaults.
+
+    Args:
+        config_path: Path to YAML config file, or None for defaults.
+
+    Returns:
+        Frozen AppConfig instance.
+
+    Raises:
+        FileNotFoundError: If config_path is specified but doesn't exist.
+        ValueError: If YAML file is invalid.
+    """
+    config_dict: dict[str, Any] = {}
+
+    if config_path is not None:
+        path = Path(config_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Config file not found: {config_path}")
+
+        raw = path.read_text(encoding="utf-8")
+        try:
+            parsed = yaml.safe_load(raw)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in {config_path}: {e}") from e
+
+        if isinstance(parsed, dict):
+            config_dict = _flatten_yaml(parsed)
+
+    config_dict = _apply_env_overrides(config_dict)
+
+    return AppConfig(**config_dict)

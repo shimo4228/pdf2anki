@@ -1,0 +1,39 @@
+# pdf2anki configuration
+
+# Claude API settings
+model: "claude-sonnet-4-5-20250929"
+max_tokens: 8192
+
+# Quality pipeline settings
+quality:
+  confidence_threshold: 0.90
+  enable_critique: true
+  max_critique_rounds: 2
+
+# Output settings
+output:
+  format: "tsv"
+  encoding: "utf-8"
+
+# Card generation settings
+cards:
+  max_cards: 50
+  card_types:
+    - qa
+    - term_definition
+    - summary_point
+    - cloze
+    - reversible
+    - sequence
+    - compare_contrast
+  bloom_filter: []  # empty = all levels
+
+# Cost tracking
+cost:
+  budget_limit: 1.00  # USD
+  warn_at: 0.80  # warn at 80% of budget
+
+# OCR settings
+ocr:
+  enabled: false
+  lang: "jpn+eng"
