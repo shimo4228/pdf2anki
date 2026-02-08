@@ -8,7 +8,7 @@ Provides two subcommands:
 from __future__ import annotations
 
 import logging
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 import typer
@@ -35,13 +35,13 @@ _SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md"}
 _DEFAULT_OCR_LANG = "jpn+eng"
 
 
-class OutputFormat(str, Enum):
+class OutputFormat(StrEnum):
     TSV = "tsv"
     JSON = "json"
     BOTH = "both"
 
 
-class QualityLevel(str, Enum):
+class QualityLevel(StrEnum):
     OFF = "off"
     BASIC = "basic"
     FULL = "full"
@@ -267,37 +267,68 @@ def convert(
     output: str | None = typer.Option(
         None, "-o", "--output", help="Output file or directory"
     ),
-    fmt: OutputFormat = typer.Option(
+    fmt: OutputFormat = typer.Option(  # noqa: B008
         OutputFormat.TSV, "--format", help="Output format"
     ),
-    quality: QualityLevel = typer.Option(
-        QualityLevel.BASIC, "--quality", help="Quality pipeline level"
+    quality: QualityLevel = typer.Option(  # noqa: B008
+        QualityLevel.BASIC,
+        "--quality",
+        help="Quality pipeline level",
     ),
-    model: str | None = typer.Option(None, "--model", help="Claude model name"),
-    max_cards: int | None = typer.Option(None, "--max-cards", help="Maximum cards to generate"),
-    tags: str | None = typer.Option(None, "--tags", help="Additional tags (comma-separated)"),
-    focus: str | None = typer.Option(None, "--focus", help="Focus topics (comma-separated)"),
+    model: str | None = typer.Option(
+        None, "--model", help="Claude model name"
+    ),
+    max_cards: int | None = typer.Option(
+        None, "--max-cards", help="Maximum cards to generate"
+    ),
+    tags: str | None = typer.Option(
+        None, "--tags", help="Additional tags (comma-separated)"
+    ),
+    focus: str | None = typer.Option(
+        None, "--focus", help="Focus topics (comma-separated)"
+    ),
     card_types: str | None = typer.Option(
-        None, "--card-types", help="Card types to generate (comma-separated)"
+        None,
+        "--card-types",
+        help="Card types to generate (comma-separated)",
     ),
     bloom_filter: str | None = typer.Option(
-        None, "--bloom-filter", help="Bloom levels to include (comma-separated)"
+        None,
+        "--bloom-filter",
+        help="Bloom levels to include (comma-separated)",
     ),
-    budget_limit: float | None = typer.Option(None, "--budget-limit", help="Budget limit in USD"),
-    ocr: bool = typer.Option(False, "--ocr", help="Enable OCR for image-heavy PDFs"),
-    lang: str | None = typer.Option(None, "--lang", help="OCR language (default: jpn+eng)"),
-    config_path: str | None = typer.Option(None, "--config", help="Path to config YAML file"),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
+    budget_limit: float | None = typer.Option(
+        None, "--budget-limit", help="Budget limit in USD"
+    ),
+    ocr: bool = typer.Option(
+        False, "--ocr", help="Enable OCR for image-heavy PDFs"
+    ),
+    lang: str | None = typer.Option(
+        None, "--lang", help="OCR language (default: jpn+eng)"
+    ),
+    config_path: str | None = typer.Option(
+        None, "--config", help="Path to config YAML file"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Enable debug logging"
+    ),
 ) -> None:
     """Convert PDF/TXT/MD to Anki flashcards."""
+    _log_fmt = "%(name)s %(levelname)s: %(message)s"
     if verbose:
-        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+        logging.basicConfig(level=logging.DEBUG, format=_log_fmt)
 
     try:
         config = _build_config(
-            config_path=config_path, model=model, max_cards=max_cards,
-            card_types=card_types, bloom_filter=bloom_filter,
-            budget_limit=budget_limit, ocr=ocr, lang=lang, quality=quality,
+            config_path=config_path,
+            model=model,
+            max_cards=max_cards,
+            card_types=card_types,
+            bloom_filter=bloom_filter,
+            budget_limit=budget_limit,
+            ocr=ocr,
+            lang=lang,
+            quality=quality,
         )
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -324,8 +355,12 @@ def convert(
         console.print(f"Processing: [cyan]{file_path.name}[/cyan]")
         try:
             result, report, cost_tracker = _process_file(
-                file_path=file_path, config=config, cost_tracker=cost_tracker,
-                quality=quality, focus_topics=focus_topics, additional_tags=additional_tags,
+                file_path=file_path,
+                config=config,
+                cost_tracker=cost_tracker,
+                quality=quality,
+                focus_topics=focus_topics,
+                additional_tags=additional_tags,
             )
         except (RuntimeError, ValueError) as e:
             console.print(f"[red]Error processing {file_path.name}:[/red] {e}")
@@ -351,14 +386,23 @@ def convert(
 
 @app.command()
 def preview(
-    input_path: str = typer.Argument(..., help="Input file (PDF/TXT/MD)"),
-    ocr: bool = typer.Option(False, "--ocr", help="Enable OCR for image-heavy PDFs"),
-    lang: str | None = typer.Option(None, "--lang", help="OCR language (default: jpn+eng)"),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
+    input_path: str = typer.Argument(
+        ..., help="Input file (PDF/TXT/MD)"
+    ),
+    ocr: bool = typer.Option(
+        False, "--ocr", help="Enable OCR for image-heavy PDFs"
+    ),
+    lang: str | None = typer.Option(
+        None, "--lang", help="OCR language (default: jpn+eng)"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Enable debug logging"
+    ),
 ) -> None:
     """Preview text extraction without generating cards (dry-run)."""
+    _log_fmt = "%(name)s %(levelname)s: %(message)s"
     if verbose:
-        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+        logging.basicConfig(level=logging.DEBUG, format=_log_fmt)
 
     path = Path(input_path)
     if not path.is_file():

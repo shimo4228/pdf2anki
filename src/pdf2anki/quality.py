@@ -15,7 +15,7 @@ import logging
 import re
 
 import anthropic
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 
 from pdf2anki.config import DEFAULT_MODEL, AppConfig
 from pdf2anki.cost import CostRecord, CostTracker, estimate_cost
@@ -96,9 +96,9 @@ def _score_front_quality(card: AnkiCard) -> float:
         return 0.4
 
     # Reversible and term_definition cards often have short terms as fronts
-    if card.card_type in (CardType.REVERSIBLE, CardType.TERM_DEFINITION):
-        if length >= 1:
-            return 1.0 if length <= 80 else 0.8
+    reversible_types = (CardType.REVERSIBLE, CardType.TERM_DEFINITION)
+    if card.card_type in reversible_types and length >= 1:
+        return 1.0 if length <= 80 else 0.8
 
     if length < _MIN_FRONT_LENGTH:
         return max(0.3, length / _MIN_FRONT_LENGTH * 0.6)
@@ -268,11 +268,11 @@ def _detect_flags(card: AnkiCard, scores: dict[str, float]) -> list[QualityFlag]
     if len(card.back) > _MAX_BACK_LENGTH:
         flags.append(QualityFlag.TOO_LONG_ANSWER)
 
-    if card.card_type in (CardType.QA, CardType.SUMMARY_POINT):
-        if _LIST_PATTERN_RE.search(card.back) or _ENUMERATION_KEYWORDS_RE.search(
-            card.front
-        ):
-            flags.append(QualityFlag.LIST_NOT_CLOZE)
+    if card.card_type in (CardType.QA, CardType.SUMMARY_POINT) and (
+        _LIST_PATTERN_RE.search(card.back)
+        or _ENUMERATION_KEYWORDS_RE.search(card.front)
+    ):
+        flags.append(QualityFlag.LIST_NOT_CLOZE)
 
     return flags
 
@@ -551,7 +551,12 @@ def critique_cards(
         logger.warning("Empty critique response")
         return list(cards), cost_tracker
 
-    response_text = response.content[0].text
+    first_block = response.content[0]
+    if not hasattr(first_block, "text"):
+        logger.warning("Unexpected response block type")
+        return list(cards), cost_tracker
+
+    response_text: str = first_block.text  # type: ignore[union-attr]
     reviews = _parse_critique_response(response_text)
 
     reviewed_indices: set[int] = set()
@@ -634,7 +639,7 @@ def run_quality_pipeline(
     passed: list[AnkiCard] = []
     low_confidence: list[AnkiCard] = []
 
-    for card, score in zip(cards, scores):
+    for card, score in zip(cards, scores, strict=True):
         if score.passes_threshold(threshold):
             passed.append(card)
         else:

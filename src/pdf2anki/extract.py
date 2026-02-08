@@ -13,7 +13,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-import pymupdf4llm
+import pymupdf4llm  # type: ignore[import-untyped]
 
 # Approximate token limit for a single chunk (150K tokens ≈ 600K chars)
 DEFAULT_TOKEN_LIMIT = 150_000
@@ -110,7 +110,8 @@ def split_into_chunks(text: str, token_limit: int = DEFAULT_TOKEN_LIMIT) -> list
 
 def _extract_pdf(path: Path) -> str:
     """Extract text from PDF using pymupdf4llm."""
-    return pymupdf4llm.to_markdown(str(path))
+    result: str = pymupdf4llm.to_markdown(str(path))
+    return result
 
 
 def _extract_plain(path: Path) -> str:
@@ -195,4 +196,5 @@ def _run_ocr(path: Path, lang: str) -> str:
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir) / "ocr_output.pdf"
         ocrmypdf.ocr(str(path), str(tmp_path), language=lang, force_ocr=True)
-        return pymupdf4llm.to_markdown(str(tmp_path))
+        result: str = pymupdf4llm.to_markdown(str(tmp_path))
+        return result

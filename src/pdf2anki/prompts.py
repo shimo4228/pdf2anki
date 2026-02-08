@@ -170,7 +170,10 @@ def build_user_prompt(
 
     sections: list[str] = []
 
-    sections.append(f"Generate up to {max_cards} Anki flashcards from the following text.")
+    sections.append(
+        f"Generate up to {max_cards} Anki flashcards"
+        " from the following text."
+    )
 
     if card_types:
         sections.append(f"Card types to generate: {', '.join(card_types)}")

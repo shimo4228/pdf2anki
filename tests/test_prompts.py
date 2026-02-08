@@ -16,7 +16,6 @@ from pdf2anki.prompts import (
     build_user_prompt,
 )
 
-
 # ============================================================
 # SYSTEM_PROMPT Tests
 # ============================================================
@@ -64,7 +63,14 @@ class TestSystemPrompt:
 
     def test_contains_bloom_levels(self) -> None:
         """SYSTEM_PROMPT should reference Bloom's Taxonomy levels."""
-        bloom_levels = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
+        bloom_levels = [
+            "remember",
+            "understand",
+            "apply",
+            "analyze",
+            "evaluate",
+            "create",
+        ]
         for bl in bloom_levels:
             assert bl in SYSTEM_PROMPT.lower(), f"Missing Bloom level: {bl}"
 

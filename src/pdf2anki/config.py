@@ -13,7 +13,6 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
-
 DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
 _DEFAULT_CARD_TYPES = [
@@ -51,7 +50,9 @@ class AppConfig(BaseModel, frozen=True):
 
     # Cards
     cards_max_cards: int = Field(default=50, gt=0)
-    cards_card_types: list[str] = Field(default_factory=lambda: list(_DEFAULT_CARD_TYPES))
+    cards_card_types: list[str] = Field(
+        default_factory=lambda: list(_DEFAULT_CARD_TYPES)
+    )
     cards_bloom_filter: list[str] = Field(default_factory=list)
 
     # Cost

@@ -14,7 +14,7 @@ Tests cover:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -31,7 +31,6 @@ from pdf2anki.schemas import (
     CardType,
     ExtractionResult,
 )
-
 
 # ============================================================
 # Fixtures
@@ -132,6 +131,14 @@ class TestTsvHeader:
         assert "#tags column:3" in lines
 
 
+def _data_lines(tsv: str) -> list[str]:
+    """Extract non-comment, non-blank lines from TSV."""
+    return [
+        ln for ln in tsv.split("\n")
+        if not ln.startswith("#") and ln.strip()
+    ]
+
+
 # ============================================================
 # cards_to_tsv() - Basic Row Format
 # ============================================================
@@ -145,7 +152,7 @@ class TestTsvRowFormat:
     ) -> None:
         """QA card row should have exactly 3 tab-separated fields."""
         tsv = cards_to_tsv([qa_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         assert len(data_lines) == 1
         fields = data_lines[0].split("\t")
         assert len(fields) == 3
@@ -153,21 +160,21 @@ class TestTsvRowFormat:
     def test_qa_card_front_in_first_field(self, qa_card: AnkiCard) -> None:
         """Front text should appear in the first field."""
         tsv = cards_to_tsv([qa_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[0].split("\t")
         assert "ニューラルネットワークの活性化関数の役割は何ですか？" in fields[0]
 
     def test_qa_card_back_in_second_field(self, qa_card: AnkiCard) -> None:
         """Back text should appear in the second field."""
         tsv = cards_to_tsv([qa_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[0].split("\t")
         assert "非線形変換を導入し" in fields[1]
 
     def test_qa_card_tags_in_third_field(self, qa_card: AnkiCard) -> None:
         """Tags should appear in the third field."""
         tsv = cards_to_tsv([qa_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[0].split("\t")
         assert "AI::基礎" in fields[2]
         assert "neural_network" in fields[2]
@@ -186,7 +193,7 @@ class TestTsvEscaping:
     ) -> None:
         """Tabs in content must be replaced with spaces to avoid TSV corruption."""
         tsv = cards_to_tsv([card_with_special_chars])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         # Each data row should have exactly 2 tabs (3 fields)
         for line in data_lines:
             assert line.count("\t") == 2
@@ -196,7 +203,7 @@ class TestTsvEscaping:
     ) -> None:
         """Newlines in content must be replaced with <br> for Anki HTML mode."""
         tsv = cards_to_tsv([card_with_special_chars])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         for line in data_lines:
             fields = line.split("\t")
             # front and back fields should not contain raw newlines
@@ -215,14 +222,14 @@ class TestTsvCloze:
     def test_cloze_front_preserved(self, cloze_card: AnkiCard) -> None:
         """Cloze front with {{c1::...}} must be preserved."""
         tsv = cards_to_tsv([cloze_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[0].split("\t")
         assert "{{c1::勾配降下法}}" in fields[0]
 
     def test_cloze_back_is_empty(self, cloze_card: AnkiCard) -> None:
         """Cloze card back field should be empty (Anki auto-generates)."""
         tsv = cards_to_tsv([cloze_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[0].split("\t")
         assert fields[1] == ""
 
@@ -240,13 +247,13 @@ class TestTsvReversible:
     ) -> None:
         """Reversible card should expand to 2 TSV rows (forward + reverse)."""
         tsv = cards_to_tsv([reversible_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         assert len(data_lines) == 2
 
     def test_reversible_forward_row(self, reversible_card: AnkiCard) -> None:
         """First row: original front -> back."""
         tsv = cards_to_tsv([reversible_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[0].split("\t")
         assert "ReLU" in fields[0]
         assert "Rectified Linear Unit" in fields[1]
@@ -254,7 +261,7 @@ class TestTsvReversible:
     def test_reversible_reverse_row(self, reversible_card: AnkiCard) -> None:
         """Second row: original back -> front (reversed)."""
         tsv = cards_to_tsv([reversible_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[1].split("\t")
         assert "Rectified Linear Unit" in fields[0]
         assert "ReLU" in fields[1]
@@ -271,14 +278,14 @@ class TestTsvTags:
     def test_bloom_level_tag_added(self, qa_card: AnkiCard) -> None:
         """Bloom level should be added as bloom::<level> tag."""
         tsv = cards_to_tsv([qa_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[0].split("\t")
         assert "bloom::understand" in fields[2]
 
     def test_tags_space_separated(self, qa_card: AnkiCard) -> None:
         """Tags should be space-separated in TSV."""
         tsv = cards_to_tsv([qa_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[0].split("\t")
         tags = fields[2]
         # Should have multiple space-separated tags
@@ -287,7 +294,7 @@ class TestTsvTags:
     def test_additional_tags_included(self, qa_card: AnkiCard) -> None:
         """Additional tags passed via parameter should be included."""
         tsv = cards_to_tsv([qa_card], additional_tags=["source::textbook"])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         fields = data_lines[0].split("\t")
         assert "source::textbook" in fields[2]
 
@@ -305,7 +312,7 @@ class TestTsvMultipleCards:
     ) -> None:
         """N normal cards should produce N data rows."""
         tsv = cards_to_tsv([qa_card, cloze_card, term_def_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         assert len(data_lines) == 3
 
     def test_mixed_cards_with_reversible(
@@ -316,13 +323,13 @@ class TestTsvMultipleCards:
     ) -> None:
         """1 QA + 1 reversible + 1 cloze = 4 data rows."""
         tsv = cards_to_tsv([qa_card, reversible_card, cloze_card])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         assert len(data_lines) == 4  # 1 + 2 + 1
 
     def test_empty_card_list(self) -> None:
         """Empty card list should produce only header lines."""
         tsv = cards_to_tsv([])
-        data_lines = [l for l in tsv.split("\n") if not l.startswith("#") and l.strip()]
+        data_lines = _data_lines(tsv)
         assert len(data_lines) == 0
 
 

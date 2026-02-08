@@ -16,7 +16,7 @@ TSV format:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pdf2anki.schemas import AnkiCard, CardType, ExtractionResult
@@ -115,7 +115,7 @@ def cards_to_json(
     data = result.model_dump(mode="json")
     data["_meta"] = {
         "schema_version": _SCHEMA_VERSION,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
     }
     return json.dumps(data, ensure_ascii=False, indent=2)
 

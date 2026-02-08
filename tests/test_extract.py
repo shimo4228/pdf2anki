@@ -9,7 +9,6 @@ from unittest.mock import patch
 import pytest
 
 from pdf2anki.extract import (
-    DEFAULT_TOKEN_LIMIT,
     ExtractedDocument,
     extract_text,
     preprocess_text,
@@ -206,28 +205,31 @@ class TestExtractTextOcr:
     """Tests for OCR fallback behavior."""
 
     def test_ocr_triggered_when_text_short(self, sample_pdf: Path) -> None:
-        with patch("pdf2anki.extract._extract_pdf", return_value=""):
-            with patch(
-                "pdf2anki.extract._run_ocr", return_value="OCR result text here"
-            ) as mock_ocr:
-                result = extract_text(sample_pdf, ocr_enabled=True)
-                mock_ocr.assert_called_once()
-                assert result.used_ocr is True
+        with patch("pdf2anki.extract._extract_pdf", return_value=""), patch(
+            "pdf2anki.extract._run_ocr", return_value="OCR result text here"
+        ) as mock_ocr:
+            result = extract_text(sample_pdf, ocr_enabled=True)
+            mock_ocr.assert_called_once()
+            assert result.used_ocr is True
 
     def test_ocr_not_triggered_when_disabled(self, sample_pdf: Path) -> None:
-        with patch("pdf2anki.extract._extract_pdf", return_value=""):
-            with patch("pdf2anki.extract._run_ocr") as mock_ocr:
-                result = extract_text(sample_pdf, ocr_enabled=False)
-                mock_ocr.assert_not_called()
-                assert result.used_ocr is False
+        with (
+            patch("pdf2anki.extract._extract_pdf", return_value=""),
+            patch("pdf2anki.extract._run_ocr") as mock_ocr,
+        ):
+            result = extract_text(sample_pdf, ocr_enabled=False)
+            mock_ocr.assert_not_called()
+            assert result.used_ocr is False
 
     def test_ocr_not_triggered_when_text_sufficient(self, sample_pdf: Path) -> None:
         long_text = "A" * 100
-        with patch("pdf2anki.extract._extract_pdf", return_value=long_text):
-            with patch("pdf2anki.extract._run_ocr") as mock_ocr:
-                result = extract_text(sample_pdf, ocr_enabled=True)
-                mock_ocr.assert_not_called()
-                assert result.used_ocr is False
+        with (
+            patch("pdf2anki.extract._extract_pdf", return_value=long_text),
+            patch("pdf2anki.extract._run_ocr") as mock_ocr,
+        ):
+            result = extract_text(sample_pdf, ocr_enabled=True)
+            mock_ocr.assert_not_called()
+            assert result.used_ocr is False
 
 
 # ---------------------------------------------------------------------------

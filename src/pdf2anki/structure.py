@@ -13,6 +13,7 @@ import re
 import time
 
 import anthropic
+from anthropic.types import MessageParam
 from pydantic import ValidationError
 
 from pdf2anki.config import DEFAULT_MODEL, AppConfig
@@ -86,7 +87,7 @@ def _call_claude_api(
     client: anthropic.Anthropic,
     model: str,
     max_tokens: int,
-    messages: list[dict[str, str]],
+    messages: list[MessageParam],
 ) -> anthropic.types.Message:
     """Call the Claude API with prompt caching for the system prompt.
 
@@ -188,7 +189,9 @@ def extract_cards(
             additional_tags=additional_tags,
         )
 
-        messages = [{"role": "user", "content": user_prompt}]
+        messages: list[MessageParam] = [
+            {"role": "user", "content": user_prompt}
+        ]
 
         response = _call_with_retry(
             client=client,
@@ -203,7 +206,10 @@ def extract_cards(
 
         first_block = response.content[0]
         if not hasattr(first_block, "text"):
-            logger.warning("Unexpected response block type: %s", type(first_block).__name__)
+            logger.warning(
+                "Unexpected response block type: %s",
+                type(first_block).__name__,
+            )
             continue
 
         response_text = first_block.text
@@ -237,7 +243,7 @@ def _call_with_retry(
     client: anthropic.Anthropic,
     model: str,
     max_tokens: int,
-    messages: list[dict[str, str]],
+    messages: list[MessageParam],
 ) -> anthropic.types.Message:
     """Call Claude API with exponential backoff retry.
 

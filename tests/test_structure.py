@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import anthropic
 import pytest
+from pydantic import ValidationError
 
 from pdf2anki.config import AppConfig
 from pdf2anki.cost import CostRecord, CostTracker
@@ -23,7 +24,6 @@ from pdf2anki.structure import (
     _parse_cards_response,
     extract_cards,
 )
-
 
 # ============================================================
 # Fixtures
@@ -40,7 +40,10 @@ SAMPLE_CARDS_JSON = json.dumps([
         "mnemonic_hint": None,
     },
     {
-        "front": "{{c1::Gradient descent}} is an optimization algorithm that minimizes the loss function.",
+        "front": (
+            "{{c1::Gradient descent}} is an optimization"
+            " algorithm that minimizes the loss function."
+        ),
         "back": "",
         "card_type": "cloze",
         "bloom_level": "remember",
@@ -51,7 +54,11 @@ SAMPLE_CARDS_JSON = json.dumps([
 ])
 
 
-def _make_mock_response(content_text: str, input_tokens: int = 500, output_tokens: int = 300) -> MagicMock:
+def _make_mock_response(
+    content_text: str,
+    input_tokens: int = 500,
+    output_tokens: int = 300,
+) -> MagicMock:
     """Create a mock Anthropic API response."""
     mock_response = MagicMock()
     mock_content_block = MagicMock()
@@ -195,7 +202,7 @@ class TestExtractCards:
         )
         assert isinstance(result, ExtractionResult)
         # ExtractionResult is frozen
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             result.source_file = "other"  # type: ignore[misc]
 
     @patch("pdf2anki.structure._call_claude_api")
@@ -369,3 +376,72 @@ class TestExtractCards:
         messages = call_kwargs[1]["messages"] if call_kwargs[1] else call_kwargs[0][3]
         user_content = messages[0]["content"]
         assert "10" in user_content
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_budget_exceeded_stops_mid_processing(self, mock_api: MagicMock) -> None:
+        """Should stop processing remaining chunks when budget runs out mid-loop."""
+        from pdf2anki.cost import CostTracker
+
+        # Return a response that costs money, pushing over the tiny budget
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="[]")]
+        mock_response.model = "claude-sonnet-4-5-20250929"
+        mock_response.usage.input_tokens = 100_000
+        mock_response.usage.output_tokens = 50_000
+        mock_api.return_value = mock_response
+
+        # Budget of $0.001 - first chunk will exceed it
+        config = AppConfig()
+        result, tracker = extract_cards(
+            text="Some text.",
+            source_file="test.txt",
+            config=config,
+            cost_tracker=CostTracker(budget_limit=0.001),
+            chunks=["chunk1", "chunk2"],
+        )
+        # Only first chunk processed, second stopped by budget check
+        assert mock_api.call_count == 1
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_cost_warn_at_threshold_logged(
+        self, mock_api: MagicMock, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Should log warning when cost approaches budget limit."""
+        from pdf2anki.cost import CostRecord, CostTracker
+
+        mock_api.return_value = _make_mock_response(SAMPLE_CARDS_JSON)
+
+        # Create tracker at 85% of budget (above default 80% warn threshold)
+        near_limit_tracker = CostTracker(budget_limit=1.0).add(
+            CostRecord(model="test", input_tokens=0, output_tokens=0, cost_usd=0.85)
+        )
+
+        config = AppConfig()
+        with caplog.at_level("WARNING", logger="pdf2anki.structure"):
+            extract_cards(
+                text="Some text.",
+                source_file="test.txt",
+                config=config,
+                cost_tracker=near_limit_tracker,
+            )
+        assert any("Cost approaching budget limit" in msg for msg in caplog.messages)
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_non_text_block_response_skipped(self, mock_api: MagicMock) -> None:
+        """Response with non-text block should be skipped."""
+        mock_response = MagicMock()
+        # Block without 'text' attribute (e.g., ToolUseBlock)
+        mock_block = MagicMock(spec=[])  # empty spec = no attributes
+        mock_response.content = [mock_block]
+        mock_response.model = "claude-sonnet-4-5-20250929"
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 50
+        mock_api.return_value = mock_response
+
+        config = AppConfig()
+        result, _ = extract_cards(
+            text="Some text.",
+            source_file="test.txt",
+            config=config,
+        )
+        assert result.card_count == 0
