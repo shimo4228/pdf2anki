@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import anthropic
 import pytest
 
 from pdf2anki.config import AppConfig
@@ -238,7 +239,7 @@ class TestExtractCards:
     def test_api_error_retries(self, mock_api: MagicMock) -> None:
         """Should retry on API errors up to max retries."""
         mock_api.side_effect = [
-            Exception("API timeout"),
+            anthropic.APIConnectionError(request=MagicMock()),
             _make_mock_response(SAMPLE_CARDS_JSON),
         ]
 
@@ -254,7 +255,9 @@ class TestExtractCards:
     @patch("pdf2anki.structure._call_claude_api")
     def test_api_error_exhausts_retries(self, mock_api: MagicMock) -> None:
         """Should raise after all retries are exhausted."""
-        mock_api.side_effect = Exception("API timeout")
+        mock_api.side_effect = anthropic.APIConnectionError(
+            request=MagicMock()
+        )
 
         config = AppConfig()
         with pytest.raises(RuntimeError, match="API"):
@@ -332,6 +335,24 @@ class TestExtractCards:
         assert mock_api.call_count == 2
         assert result.card_count == 2  # 1 per chunk
         assert tracker.request_count == 2
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_empty_content_response_skipped(self, mock_api: MagicMock) -> None:
+        """Empty content should be skipped without error."""
+        mock_response = MagicMock()
+        mock_response.content = []
+        mock_response.model = "claude-sonnet-4-5-20250929"
+        mock_response.usage.input_tokens = 100
+        mock_response.usage.output_tokens = 0
+        mock_api.return_value = mock_response
+
+        config = AppConfig()
+        result, _ = extract_cards(
+            text="Some text.",
+            source_file="test.txt",
+            config=config,
+        )
+        assert result.card_count == 0
 
     @patch("pdf2anki.structure._call_claude_api")
     def test_max_cards_respected(self, mock_api: MagicMock) -> None:

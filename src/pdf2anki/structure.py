@@ -15,7 +15,7 @@ import time
 import anthropic
 from pydantic import ValidationError
 
-from pdf2anki.config import AppConfig
+from pdf2anki.config import DEFAULT_MODEL, AppConfig
 from pdf2anki.cost import CostRecord, CostTracker, estimate_cost, select_model
 from pdf2anki.prompts import SYSTEM_PROMPT, build_user_prompt
 from pdf2anki.schemas import AnkiCard, ExtractionResult
@@ -24,6 +24,13 @@ logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 3
 _RETRY_DELAY_SECONDS = 2.0
+
+# Retryable API errors (network/rate-limit/server errors only)
+_RETRYABLE_ERRORS = (
+    anthropic.APIConnectionError,
+    anthropic.RateLimitError,
+    anthropic.InternalServerError,
+)
 
 # Regex to extract JSON from markdown code blocks
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
@@ -148,10 +155,12 @@ def extract_cards(
     model = select_model(
         text_length=len(text),
         card_count=config.cards_max_cards,
-        force_model=config.model if config.model != "claude-sonnet-4-5-20250929" else None,
+        force_model=config.model if config.model != DEFAULT_MODEL else None,
     )
 
     text_chunks = chunks if chunks is not None else [text]
+    warn_threshold = config.cost_warn_at * config.cost_budget_limit
+    cost_warned = False
 
     client = anthropic.Anthropic()
     all_cards: list[AnkiCard] = []
@@ -160,6 +169,15 @@ def extract_cards(
         if not tracker.is_within_budget:
             logger.warning("Budget exceeded, stopping chunk processing")
             break
+
+        if not cost_warned and tracker.total_cost >= warn_threshold:
+            logger.warning(
+                "Cost approaching budget limit: $%.4f / $%.2f (%.0f%%)",
+                tracker.total_cost,
+                tracker.budget_limit,
+                (tracker.total_cost / tracker.budget_limit) * 100,
+            )
+            cost_warned = True
 
         user_prompt = build_user_prompt(
             chunk,
@@ -179,7 +197,16 @@ def extract_cards(
             messages=messages,
         )
 
-        response_text = response.content[0].text
+        if not response.content:
+            logger.warning("Empty API response for chunk, skipping")
+            continue
+
+        first_block = response.content[0]
+        if not hasattr(first_block, "text"):
+            logger.warning("Unexpected response block type: %s", type(first_block).__name__)
+            continue
+
+        response_text = first_block.text
         cards = _parse_cards_response(response_text)
         all_cards.extend(cards)
 
@@ -236,7 +263,7 @@ def _call_with_retry(
                 max_tokens=max_tokens,
                 messages=messages,
             )
-        except Exception as e:
+        except _RETRYABLE_ERRORS as e:
             last_error = e
             logger.warning(
                 "API call attempt %d/%d failed: %s",

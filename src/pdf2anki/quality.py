@@ -17,7 +17,7 @@ import re
 import anthropic
 from pydantic import BaseModel, Field, ValidationError
 
-from pdf2anki.config import AppConfig
+from pdf2anki.config import DEFAULT_MODEL, AppConfig
 from pdf2anki.cost import CostRecord, CostTracker, estimate_cost
 from pdf2anki.prompts import CRITIQUE_PROMPT
 from pdf2anki.schemas import (
@@ -281,19 +281,21 @@ def _detect_duplicates(
     cards: list[AnkiCard],
     scores: list[CardConfidenceScore],
 ) -> list[CardConfidenceScore]:
-    """Check for duplicate concepts across cards and add flags."""
+    """Check for duplicate concepts across cards and add flags.
+
+    Compares each pair (i, j) only once (j > i) to halve comparisons.
+    """
+    dup_indices: set[int] = set()
+
+    for i in range(len(cards)):
+        for j in range(i + 1, len(cards)):
+            if _cards_are_similar(cards[i], cards[j]):
+                dup_indices.add(i)
+                dup_indices.add(j)
+
     updated: list[CardConfidenceScore] = []
-
-    for i, (card, score) in enumerate(zip(cards, scores)):
-        is_dup = False
-        for j, other in enumerate(cards):
-            if i == j:
-                continue
-            if _cards_are_similar(card, other):
-                is_dup = True
-                break
-
-        if is_dup and QualityFlag.DUPLICATE_CONCEPT not in score.flags:
+    for i, score in enumerate(scores):
+        if i in dup_indices and QualityFlag.DUPLICATE_CONCEPT not in score.flags:
             updated.append(
                 score.model_copy(
                     update={"flags": [*score.flags, QualityFlag.DUPLICATE_CONCEPT]}
@@ -303,6 +305,17 @@ def _detect_duplicates(
             updated.append(score)
 
     return updated
+
+
+def _char_bigrams(text: str) -> set[str]:
+    """Extract character bigrams for similarity comparison.
+
+    Bigrams preserve ordering information, reducing false positives
+    compared to single-character sets.
+    """
+    if len(text) < 2:
+        return set(text)
+    return {text[i : i + 2] for i in range(len(text) - 1)}
 
 
 def _tokenize(text: str) -> set[str]:
@@ -315,52 +328,42 @@ def _tokenize(text: str) -> set[str]:
     return {t for t in tokens if len(t) >= 2}
 
 
+def _jaccard(a: set[str], b: set[str]) -> float:
+    """Compute Jaccard similarity between two sets."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
 def _cards_are_similar(a: AnkiCard, b: AnkiCard) -> bool:
     """Check if two cards cover the same concept.
 
-    Uses character-level Jaccard on front text, plus tag overlap.
+    Uses character bigram Jaccard on front text (reduces false
+    positives from single-char sets), plus token, tag, and back overlap.
     """
-    # Character-level Jaccard for front text
-    chars_a = set(a.front)
-    chars_b = set(b.front)
-    if not chars_a or not chars_b:
-        return False
+    front_sim = _jaccard(_char_bigrams(a.front), _char_bigrams(b.front))
 
-    char_intersection = chars_a & chars_b
-    char_union = chars_a | chars_b
-    char_jaccard = len(char_intersection) / len(char_union) if char_union else 0.0
-
-    # Token-level overlap
-    tokens_a = _tokenize(a.front)
-    tokens_b = _tokenize(b.front)
-    token_intersection = tokens_a & tokens_b
-    token_union = tokens_a | tokens_b
-    token_jaccard = len(token_intersection) / len(token_union) if token_union else 0.0
-
-    # Same card type + high character similarity
-    if char_jaccard > 0.7 and a.card_type == b.card_type:
+    # Same card type + high front similarity
+    if front_sim > 0.7 and a.card_type == b.card_type:
         return True
 
-    # Shared tags + moderate character similarity
-    a_tags = set(a.tags)
-    b_tags = set(b.tags)
-    if a_tags == b_tags and char_jaccard > 0.5:
+    # Shared tags + moderate front similarity
+    if set(a.tags) == set(b.tags) and front_sim > 0.5:
         return True
 
-    # High token overlap (catches similar concepts with different phrasing)
-    if token_jaccard > 0.5 and a.card_type == b.card_type:
+    # Token-level overlap (catches similar concepts with different phrasing)
+    token_sim = _jaccard(_tokenize(a.front), _tokenize(b.front))
+    if token_sim > 0.5 and a.card_type == b.card_type:
         return True
 
     # Back content similarity for same-type cards
     if a.card_type == b.card_type and a.back and b.back:
-        back_chars_a = set(a.back)
-        back_chars_b = set(b.back)
-        back_union = back_chars_a | back_chars_b
-        back_jaccard = (
-            len(back_chars_a & back_chars_b) / len(back_union) if back_union else 0.0
-        )
-        # High back similarity + moderate front overlap = duplicate
-        if back_jaccard > 0.55 and char_jaccard > 0.3:
+        back_sim = _jaccard(_char_bigrams(a.back), _char_bigrams(b.back))
+        # Strong back similarity with any front overlap
+        if back_sim > 0.4 and front_sim > 0.1:
+            return True
+        # Shared tags + moderate back similarity
+        if set(a.tags) == set(b.tags) and back_sim > 0.35:
             return True
 
     return False
@@ -500,7 +503,7 @@ def critique_cards(
     cards: list[AnkiCard],
     source_text: str,
     cost_tracker: CostTracker,
-    model: str = "claude-sonnet-4-5-20250929",
+    model: str = DEFAULT_MODEL,
 ) -> tuple[list[AnkiCard], CostTracker]:
     """Send low-confidence cards to LLM for critique and improvement.
 
@@ -527,7 +530,7 @@ def critique_cards(
             cards_json=cards_json,
             source_text=source_text,
         )
-    except (anthropic.APIError, Exception) as e:
+    except anthropic.APIError as e:
         logger.error("API error during critique: %s", e)
         return list(cards), cost_tracker
 

@@ -14,6 +14,8 @@ import yaml
 from pydantic import BaseModel, Field
 
 
+DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
+
 _DEFAULT_CARD_TYPES = [
     "qa",
     "term_definition",
@@ -35,7 +37,7 @@ class AppConfig(BaseModel, frozen=True):
     """Application configuration. Immutable."""
 
     # Claude API
-    model: str = "claude-sonnet-4-5-20250929"
+    model: str = DEFAULT_MODEL
     max_tokens: int = Field(default=8192, gt=0)
 
     # Quality pipeline
@@ -61,19 +63,21 @@ class AppConfig(BaseModel, frozen=True):
     ocr_lang: str = "jpn+eng"
 
 
-def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
-    """Flatten nested YAML structure to flat config fields.
+def _flatten_yaml(data: dict[str, Any], *, _prefix: str = "") -> dict[str, Any]:
+    """Flatten nested YAML structure to flat config fields (recursive).
 
     Example: {"quality": {"confidence_threshold": 0.9}}
     becomes: {"quality_confidence_threshold": 0.9}
+
+    Handles arbitrarily nested dicts by joining keys with '_'.
     """
     flat: dict[str, Any] = {}
     for key, value in data.items():
+        full_key = f"{_prefix}{key}" if not _prefix else f"{_prefix}_{key}"
         if isinstance(value, dict):
-            for sub_key, sub_value in value.items():
-                flat[f"{key}_{sub_key}"] = sub_value
+            flat.update(_flatten_yaml(value, _prefix=full_key))
         else:
-            flat[key] = value
+            flat[full_key] = value
     return flat
 
 

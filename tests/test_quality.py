@@ -17,6 +17,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pdf2anki.config import AppConfig
+from pdf2anki.cost import CostTracker
 from pdf2anki.quality import (
     QualityReport,
     critique_cards,
@@ -500,8 +502,6 @@ class TestCritiqueCards:
         mock_message.usage = MagicMock(input_tokens=500, output_tokens=200)
 
         with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
-            from pdf2anki.cost import CostTracker
-
             result_cards, tracker = critique_cards(
                 cards=[low_quality_card],
                 source_text="機械学習の概要テスト",
@@ -536,8 +536,6 @@ class TestCritiqueCards:
         mock_message.usage = MagicMock(input_tokens=300, output_tokens=100)
 
         with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
-            from pdf2anki.cost import CostTracker
-
             result_cards, _ = critique_cards(
                 cards=[card],
                 source_text="テスト",
@@ -586,8 +584,6 @@ class TestCritiqueCards:
         mock_message.usage = MagicMock(input_tokens=400, output_tokens=300)
 
         with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
-            from pdf2anki.cost import CostTracker
-
             result_cards, _ = critique_cards(
                 cards=[card],
                 source_text="CNN RNN テスト",
@@ -597,8 +593,6 @@ class TestCritiqueCards:
 
     def test_critique_empty_input(self) -> None:
         """Empty card list should return empty results without API call."""
-        from pdf2anki.cost import CostTracker
-
         tracker = CostTracker(budget_limit=1.0)
         result_cards, result_tracker = critique_cards(
             cards=[],
@@ -669,9 +663,6 @@ class TestRunQualityPipeline:
         self, high_quality_qa_card: AnkiCard, high_quality_cloze_card: AnkiCard
     ) -> None:
         """High quality cards should pass through without critique."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
         config = AppConfig(quality_confidence_threshold=0.90, quality_enable_critique=False)
         tracker = CostTracker(budget_limit=1.0)
 
@@ -689,9 +680,6 @@ class TestRunQualityPipeline:
         self, vague_question_card: AnkiCard
     ) -> None:
         """With critique disabled, all cards pass through (even low quality)."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
         config = AppConfig(quality_enable_critique=False)
         tracker = CostTracker(budget_limit=1.0)
 
@@ -710,9 +698,6 @@ class TestRunQualityPipeline:
         vague_question_card: AnkiCard,
     ) -> None:
         """Low quality cards should be sent for critique when enabled."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
         config = AppConfig(
             quality_confidence_threshold=0.90,
             quality_enable_critique=True,
@@ -745,9 +730,6 @@ class TestRunQualityPipeline:
         vague_question_card: AnkiCard,
     ) -> None:
         """Pipeline should respect quality_max_critique_rounds."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
         config = AppConfig(
             quality_confidence_threshold=0.90,
             quality_enable_critique=True,
@@ -765,9 +747,6 @@ class TestRunQualityPipeline:
 
     def test_pipeline_empty_input(self) -> None:
         """Empty card list should produce empty results."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
         config = AppConfig()
         tracker = CostTracker(budget_limit=1.0)
 
