@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment variables (API keys etc.)
+.env
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code (local settings)
+.claude/settings.local.json
+
+# Project output (personal data)
+output/
+
+# Test / Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# uv
+uv.lock
