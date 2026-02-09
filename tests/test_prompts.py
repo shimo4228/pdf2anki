@@ -13,8 +13,10 @@ import pytest
 from pdf2anki.prompts import (
     CRITIQUE_PROMPT,
     SYSTEM_PROMPT,
+    build_section_prompt,
     build_user_prompt,
 )
+from pdf2anki.section import Section
 
 # ============================================================
 # SYSTEM_PROMPT Tests
@@ -214,3 +216,149 @@ class TestBuildUserPrompt:
         long_text = "A" * 10000
         prompt = build_user_prompt(long_text)
         assert long_text in prompt
+
+
+# ============================================================
+# build_section_prompt Tests
+# ============================================================
+
+
+def _make_section(
+    *,
+    heading: str = "第1章 論書名の意味",
+    level: int = 1,
+    breadcrumb: str = "正理の海 > 本論 > 第1章",
+    text: str = "# 第1章 論書名の意味\n\n論書名の内容がここに入る。",
+    page_range: str = "pp.3-18",
+) -> Section:
+    """Helper to create a Section for prompt tests."""
+    return Section(
+        id="section-1",
+        heading=heading,
+        level=level,
+        breadcrumb=breadcrumb,
+        text=text,
+        page_range=page_range,
+        char_count=len(text),
+    )
+
+
+class TestBuildSectionPrompt:
+    """Test build_section_prompt function for section-aware prompting."""
+
+    def test_contains_section_text(self) -> None:
+        """Prompt should contain the section body text."""
+        section = _make_section()
+        prompt = build_section_prompt(section)
+        assert "論書名の内容がここに入る" in prompt
+
+    def test_contains_breadcrumb(self) -> None:
+        """Prompt should include the breadcrumb context."""
+        section = _make_section(breadcrumb="正理の海 > 本論 > 第1章")
+        prompt = build_section_prompt(section)
+        assert "正理の海 > 本論 > 第1章" in prompt
+
+    def test_contains_document_title(self) -> None:
+        """Prompt should include document_title when provided."""
+        section = _make_section()
+        prompt = build_section_prompt(section, document_title="正理の海全編")
+        assert "正理の海全編" in prompt
+
+    def test_contains_page_range(self) -> None:
+        """Prompt should include page range when available."""
+        section = _make_section(page_range="pp.3-18")
+        prompt = build_section_prompt(section)
+        assert "pp.3-18" in prompt
+
+    def test_empty_page_range_omitted(self) -> None:
+        """Empty page_range should not add a page range line."""
+        section = _make_section(page_range="")
+        prompt = build_section_prompt(section)
+        # Should not contain "Page range" or "pp." placeholder
+        assert "pp." not in prompt
+
+    def test_hierarchical_tag_instruction(self) -> None:
+        """Prompt should instruct LLM to generate hierarchical tags from breadcrumb."""
+        section = _make_section(breadcrumb="正理の海 > 本論 > 第1章")
+        prompt = build_section_prompt(section)
+        # Should contain tag hierarchy instruction using :: separator
+        assert "::" in prompt
+
+    def test_default_max_cards_is_20(self) -> None:
+        """Default max_cards should be 20 (section-level, not document-level 50)."""
+        section = _make_section()
+        prompt = build_section_prompt(section)
+        assert "20" in prompt
+
+    def test_custom_max_cards(self) -> None:
+        """Custom max_cards should override default."""
+        section = _make_section()
+        prompt = build_section_prompt(section, max_cards=10)
+        assert "10" in prompt
+
+    def test_card_types_included(self) -> None:
+        """Card type filter should appear in prompt."""
+        section = _make_section()
+        prompt = build_section_prompt(section, card_types=["qa", "cloze"])
+        assert "qa" in prompt
+        assert "cloze" in prompt
+
+    def test_focus_topics_included(self) -> None:
+        """Focus topics should appear in prompt."""
+        section = _make_section()
+        prompt = build_section_prompt(section, focus_topics=["因明", "論理学"])
+        assert "因明" in prompt
+        assert "論理学" in prompt
+
+    def test_bloom_filter_included(self) -> None:
+        """Bloom level filter should appear in prompt."""
+        section = _make_section()
+        prompt = build_section_prompt(
+            section, bloom_filter=["remember", "understand"]
+        )
+        assert "remember" in prompt
+        assert "understand" in prompt
+
+    def test_additional_tags_included(self) -> None:
+        """Additional tags should appear in prompt."""
+        section = _make_section()
+        prompt = build_section_prompt(
+            section, additional_tags=["仏教::インド", "哲学"]
+        )
+        assert "仏教::インド" in prompt
+        assert "哲学" in prompt
+
+    def test_empty_section_text_raises(self) -> None:
+        """Section with empty text should raise ValueError."""
+        section = Section(
+            id="section-0",
+            heading="",
+            level=0,
+            breadcrumb="",
+            text="",
+            page_range="",
+            char_count=0,
+        )
+        with pytest.raises(ValueError, match="text"):
+            build_section_prompt(section)
+
+    def test_returns_string(self) -> None:
+        """Should return a non-empty string."""
+        section = _make_section()
+        prompt = build_section_prompt(section)
+        assert isinstance(prompt, str)
+        assert len(prompt) > 0
+
+    def test_preamble_section_no_breadcrumb(self) -> None:
+        """Level-0 preamble section with empty breadcrumb should work."""
+        section = Section(
+            id="section-0",
+            heading="",
+            level=0,
+            breadcrumb="",
+            text="前書きのテキスト。",
+            page_range="",
+            char_count=9,
+        )
+        prompt = build_section_prompt(section)
+        assert "前書きのテキスト" in prompt
