@@ -350,7 +350,9 @@ def _extract_cards_from_sections(
 
         response_text = first_block.text
         cards = parse_cards_response(response_text)
-        all_cards.extend(cards)
+        # Inject section origin tag for cross-section dedup tracking
+        tagged_cards = _inject_section_tag(cards, section.id)
+        all_cards.extend(tagged_cards)
 
         cost = estimate_cost(
             model=response.model,
@@ -372,6 +374,20 @@ def _extract_cards_from_sections(
     )
 
     return result, tracker
+
+
+def _inject_section_tag(
+    cards: list[AnkiCard], section_id: str
+) -> list[AnkiCard]:
+    """Add a _section:: origin tag to each card for dedup tracking.
+
+    Returns new AnkiCard instances (immutable pattern).
+    """
+    tag = f"_section::{section_id}"
+    return [
+        card.model_copy(update={"tags": [*card.tags, tag]})
+        for card in cards
+    ]
 
 
 def _call_with_retry(

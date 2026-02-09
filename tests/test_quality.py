@@ -451,6 +451,34 @@ class TestDuplicateDetection:
         )
         assert has_duplicate
 
+    def test_cross_section_duplicates_detected(self) -> None:
+        """Cards from different sections with same concept should be flagged.
+
+        This tests the Phase 4 requirement: when cards from separate sections
+        (identifiable by _section:: tags) cover the same concept, the quality
+        pipeline should still detect them as duplicates.
+        """
+        # Simulates cards from section-0 and section-1 with same content
+        card_from_section_0 = AnkiCard(
+            front="ReLUとは何ですか？",
+            back="max(0, x)を出力する活性化関数。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["AI::活性化関数", "_section::section-0"],
+        )
+        card_from_section_1 = AnkiCard(
+            front="ReLU関数の定義は？",
+            back="f(x) = max(0, x)の活性化関数。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["AI::活性化関数", "_section::section-1"],
+        )
+        scores = score_cards([card_from_section_0, card_from_section_1])
+        has_duplicate = any(
+            QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores
+        )
+        assert has_duplicate
+
 
 # ============================================================
 # critique_cards() Tests

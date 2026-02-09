@@ -688,3 +688,32 @@ class TestExtractCardsWithSections:
 
         # After 2 sections: 30 cards >= 20 limit -> third section skipped
         assert mock_api.call_count == 2
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_inject_origin_tags(self, mock_api: MagicMock) -> None:
+        """Cards from section-aware extraction should have _section:: tags."""
+        mock_api.return_value = _make_mock_response(
+            json.dumps([{
+                "front": "Q?",
+                "back": "A.",
+                "card_type": "qa",
+                "bloom_level": "remember",
+                "tags": ["test"],
+                "related_concepts": [],
+                "mnemonic_hint": None,
+            }])
+        )
+
+        config = AppConfig()
+        sections = _make_test_sections()
+        result, _ = extract_cards(
+            text="Full text.",
+            source_file="test.pdf",
+            config=config,
+            sections=sections,
+        )
+
+        # Each card should have _section::section-N tag injected
+        for card in result.cards:
+            section_tags = [t for t in card.tags if t.startswith("_section::")]
+            assert len(section_tags) == 1, f"Expected _section:: tag in {card.tags}"

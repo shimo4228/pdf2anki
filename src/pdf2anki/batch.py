@@ -257,10 +257,17 @@ def collect_batch_results(
             )
             continue
 
+        # Inject section origin tag for cross-section dedup tracking
+        section_tag = f"_section::{entry.custom_id}"
+        tagged_cards = [
+            card.model_copy(update={"tags": [*card.tags, section_tag]})
+            for card in cards
+        ]
+
         results.append(
             BatchResult(
                 custom_id=entry.custom_id,
-                cards=cards,
+                cards=tagged_cards,
                 input_tokens=message.usage.input_tokens,
                 output_tokens=message.usage.output_tokens,
                 model=message.model,
