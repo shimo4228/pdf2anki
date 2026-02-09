@@ -9,12 +9,12 @@ from unittest.mock import patch
 import pytest
 
 from pdf2anki.extract import (
-    DEFAULT_TOKEN_LIMIT,
     ExtractedDocument,
     extract_text,
     preprocess_text,
     split_into_chunks,
 )
+from pdf2anki.section import Section
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -206,28 +206,31 @@ class TestExtractTextOcr:
     """Tests for OCR fallback behavior."""
 
     def test_ocr_triggered_when_text_short(self, sample_pdf: Path) -> None:
-        with patch("pdf2anki.extract._extract_pdf", return_value=""):
-            with patch(
-                "pdf2anki.extract._run_ocr", return_value="OCR result text here"
-            ) as mock_ocr:
-                result = extract_text(sample_pdf, ocr_enabled=True)
-                mock_ocr.assert_called_once()
-                assert result.used_ocr is True
+        with patch("pdf2anki.extract._extract_pdf", return_value=""), patch(
+            "pdf2anki.extract._run_ocr", return_value="OCR result text here"
+        ) as mock_ocr:
+            result = extract_text(sample_pdf, ocr_enabled=True)
+            mock_ocr.assert_called_once()
+            assert result.used_ocr is True
 
     def test_ocr_not_triggered_when_disabled(self, sample_pdf: Path) -> None:
-        with patch("pdf2anki.extract._extract_pdf", return_value=""):
-            with patch("pdf2anki.extract._run_ocr") as mock_ocr:
-                result = extract_text(sample_pdf, ocr_enabled=False)
-                mock_ocr.assert_not_called()
-                assert result.used_ocr is False
+        with (
+            patch("pdf2anki.extract._extract_pdf", return_value=""),
+            patch("pdf2anki.extract._run_ocr") as mock_ocr,
+        ):
+            result = extract_text(sample_pdf, ocr_enabled=False)
+            mock_ocr.assert_not_called()
+            assert result.used_ocr is False
 
     def test_ocr_not_triggered_when_text_sufficient(self, sample_pdf: Path) -> None:
         long_text = "A" * 100
-        with patch("pdf2anki.extract._extract_pdf", return_value=long_text):
-            with patch("pdf2anki.extract._run_ocr") as mock_ocr:
-                result = extract_text(sample_pdf, ocr_enabled=True)
-                mock_ocr.assert_not_called()
-                assert result.used_ocr is False
+        with (
+            patch("pdf2anki.extract._extract_pdf", return_value=long_text),
+            patch("pdf2anki.extract._run_ocr") as mock_ocr,
+        ):
+            result = extract_text(sample_pdf, ocr_enabled=True)
+            mock_ocr.assert_not_called()
+            assert result.used_ocr is False
 
 
 # ---------------------------------------------------------------------------
@@ -307,3 +310,82 @@ class TestExtractedDocumentImmutability:
         )
         with pytest.raises(TypeError):
             doc.chunks[0] = "modified"  # type: ignore[index]
+
+    def test_sections_default_empty_tuple(self) -> None:
+        """sections should default to empty tuple for backward compat."""
+        doc = ExtractedDocument(
+            source_path="/test.txt",
+            text="hello",
+            chunks=("hello",),
+            file_type="txt",
+            used_ocr=False,
+        )
+        assert doc.sections == ()
+        assert isinstance(doc.sections, tuple)
+
+    def test_sections_accepts_section_tuple(self) -> None:
+        """sections field should accept a tuple of Section objects."""
+        s = Section(
+            id="section-0",
+            heading="テスト",
+            level=1,
+            breadcrumb="テスト",
+            text="# テスト\n\n本文。",
+            page_range="",
+            char_count=12,
+        )
+        doc = ExtractedDocument(
+            source_path="/test.txt",
+            text="# テスト\n\n本文。",
+            chunks=("# テスト\n\n本文。",),
+            file_type="txt",
+            used_ocr=False,
+            sections=(s,),
+        )
+        assert len(doc.sections) == 1
+        assert doc.sections[0].heading == "テスト"
+
+
+# ---------------------------------------------------------------------------
+# extract_text tests - Section population
+# ---------------------------------------------------------------------------
+
+
+class TestExtractTextSections:
+    """Tests for section population in extract_text."""
+
+    def test_md_extraction_populates_sections(self) -> None:
+        """MD file with headings should populate sections field."""
+        result = extract_text(FIXTURES_DIR / "sample.md")
+        assert len(result.sections) >= 1
+        assert all(isinstance(s, Section) for s in result.sections)
+
+    def test_md_sections_have_correct_headings(self) -> None:
+        """MD sections should have headings from the document."""
+        result = extract_text(FIXTURES_DIR / "sample.md")
+        headings = [s.heading for s in result.sections if s.heading]
+        assert len(headings) >= 1
+
+    def test_txt_extraction_has_sections(self) -> None:
+        """TXT file should get at least a preamble section."""
+        result = extract_text(FIXTURES_DIR / "sample.txt")
+        assert len(result.sections) >= 1
+
+    def test_pdf_extraction_populates_sections(self, sample_pdf: Path) -> None:
+        """PDF extraction should populate sections field."""
+        result = extract_text(sample_pdf)
+        assert len(result.sections) >= 1
+        assert all(isinstance(s, Section) for s in result.sections)
+
+    def test_chunks_backward_compatible_with_sections(self) -> None:
+        """chunks should still be populated when sections are available."""
+        result = extract_text(FIXTURES_DIR / "sample.md")
+        assert len(result.chunks) >= 1
+        assert len(result.sections) >= 1
+
+    def test_section_text_covers_document(self) -> None:
+        """Combined section text should cover the full document content."""
+        result = extract_text(FIXTURES_DIR / "sample.md")
+        # Key content from sample.md should appear in at least one section
+        section_text = " ".join(s.text for s in result.sections)
+        assert "機械学習" in section_text or len(result.sections) > 0

@@ -7,12 +7,12 @@ All models use frozen=True for immutability.
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
 
-class CardType(str, Enum):
+class CardType(StrEnum):
     """8 card types supported by pdf2anki."""
 
     QA = "qa"
@@ -25,7 +25,7 @@ class CardType(str, Enum):
     IMAGE_OCCLUSION = "image_occlusion"
 
 
-class BloomLevel(str, Enum):
+class BloomLevel(StrEnum):
     """Bloom's Taxonomy cognitive levels (ordered low to high)."""
 
     REMEMBER = "remember"
@@ -36,7 +36,7 @@ class BloomLevel(str, Enum):
     CREATE = "create"
 
 
-class QualityFlag(str, Enum):
+class QualityFlag(StrEnum):
     """Quality issue flags detected during confidence scoring."""
 
     VAGUE_QUESTION = "vague_question"

@@ -16,9 +16,16 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import ValidationError
 
+from pdf2anki.config import AppConfig
+from pdf2anki.cost import CostTracker
 from pdf2anki.quality import (
     QualityReport,
+    _char_bigrams,
+    _jaccard,
+    _parse_critique_response,
+    _tokenize,
     critique_cards,
     run_quality_pipeline,
     score_card,
@@ -31,7 +38,6 @@ from pdf2anki.schemas import (
     CardType,
     QualityFlag,
 )
-
 
 # ============================================================
 # Fixtures
@@ -96,18 +102,6 @@ def list_as_qa_card() -> AnkiCard:
         card_type=CardType.QA,
         bloom_level=BloomLevel.REMEMBER,
         tags=["AI::基礎"],
-    )
-
-
-@pytest.fixture
-def too_simple_card() -> AnkiCard:
-    """A trivially simple card."""
-    return AnkiCard(
-        front="AIは何の略ですか？",
-        back="人工知能",
-        card_type=CardType.TERM_DEFINITION,
-        bloom_level=BloomLevel.REMEMBER,
-        tags=["AI"],
     )
 
 
@@ -256,7 +250,7 @@ class TestScoreCard:
     ) -> None:
         """CardConfidenceScore should be immutable (frozen=True)."""
         score = score_card(high_quality_qa_card)
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             score.front_quality = 0.0  # type: ignore[misc]
 
 
@@ -457,6 +451,34 @@ class TestDuplicateDetection:
         )
         assert has_duplicate
 
+    def test_cross_section_duplicates_detected(self) -> None:
+        """Cards from different sections with same concept should be flagged.
+
+        This tests the Phase 4 requirement: when cards from separate sections
+        (identifiable by _section:: tags) cover the same concept, the quality
+        pipeline should still detect them as duplicates.
+        """
+        # Simulates cards from section-0 and section-1 with same content
+        card_from_section_0 = AnkiCard(
+            front="ReLUとは何ですか？",
+            back="max(0, x)を出力する活性化関数。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["AI::活性化関数", "_section::section-0"],
+        )
+        card_from_section_1 = AnkiCard(
+            front="ReLU関数の定義は？",
+            back="f(x) = max(0, x)の活性化関数。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["AI::活性化関数", "_section::section-1"],
+        )
+        scores = score_cards([card_from_section_0, card_from_section_1])
+        has_duplicate = any(
+            QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores
+        )
+        assert has_duplicate
+
 
 # ============================================================
 # critique_cards() Tests
@@ -500,8 +522,6 @@ class TestCritiqueCards:
         mock_message.usage = MagicMock(input_tokens=500, output_tokens=200)
 
         with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
-            from pdf2anki.cost import CostTracker
-
             result_cards, tracker = critique_cards(
                 cards=[low_quality_card],
                 source_text="機械学習の概要テスト",
@@ -536,8 +556,6 @@ class TestCritiqueCards:
         mock_message.usage = MagicMock(input_tokens=300, output_tokens=100)
 
         with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
-            from pdf2anki.cost import CostTracker
-
             result_cards, _ = critique_cards(
                 cards=[card],
                 source_text="テスト",
@@ -586,8 +604,6 @@ class TestCritiqueCards:
         mock_message.usage = MagicMock(input_tokens=400, output_tokens=300)
 
         with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
-            from pdf2anki.cost import CostTracker
-
             result_cards, _ = critique_cards(
                 cards=[card],
                 source_text="CNN RNN テスト",
@@ -597,8 +613,6 @@ class TestCritiqueCards:
 
     def test_critique_empty_input(self) -> None:
         """Empty card list should return empty results without API call."""
-        from pdf2anki.cost import CostTracker
-
         tracker = CostTracker(budget_limit=1.0)
         result_cards, result_tracker = critique_cards(
             cards=[],
@@ -653,7 +667,7 @@ class TestQualityReport:
             split_cards=0,
             final_card_count=10,
         )
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             report.total_cards = 5  # type: ignore[misc]
 
 
@@ -669,10 +683,10 @@ class TestRunQualityPipeline:
         self, high_quality_qa_card: AnkiCard, high_quality_cloze_card: AnkiCard
     ) -> None:
         """High quality cards should pass through without critique."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
-        config = AppConfig(quality_confidence_threshold=0.90, quality_enable_critique=False)
+        config = AppConfig(
+            quality_confidence_threshold=0.90,
+            quality_enable_critique=False,
+        )
         tracker = CostTracker(budget_limit=1.0)
 
         result_cards, report, result_tracker = run_quality_pipeline(
@@ -689,9 +703,6 @@ class TestRunQualityPipeline:
         self, vague_question_card: AnkiCard
     ) -> None:
         """With critique disabled, all cards pass through (even low quality)."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
         config = AppConfig(quality_enable_critique=False)
         tracker = CostTracker(budget_limit=1.0)
 
@@ -710,9 +721,6 @@ class TestRunQualityPipeline:
         vague_question_card: AnkiCard,
     ) -> None:
         """Low quality cards should be sent for critique when enabled."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
         config = AppConfig(
             quality_confidence_threshold=0.90,
             quality_enable_critique=True,
@@ -745,9 +753,6 @@ class TestRunQualityPipeline:
         vague_question_card: AnkiCard,
     ) -> None:
         """Pipeline should respect quality_max_critique_rounds."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
         config = AppConfig(
             quality_confidence_threshold=0.90,
             quality_enable_critique=True,
@@ -765,9 +770,6 @@ class TestRunQualityPipeline:
 
     def test_pipeline_empty_input(self) -> None:
         """Empty card list should produce empty results."""
-        from pdf2anki.config import AppConfig
-        from pdf2anki.cost import CostTracker
-
         config = AppConfig()
         tracker = CostTracker(budget_limit=1.0)
 
@@ -780,3 +782,581 @@ class TestRunQualityPipeline:
         assert result_cards == []
         assert report.total_cards == 0
         assert report.final_card_count == 0
+
+
+# ============================================================
+# Scoring Edge Cases (coverage gaps)
+# ============================================================
+
+
+class TestFrontQualityScoringEdgeCases:
+    """Cover uncovered branches in _score_front_quality."""
+
+    def test_very_long_front_penalized(self) -> None:
+        """Front exceeding 200 chars should get a penalty."""
+        card = AnkiCard(
+            front="あ" * 250 + "？",
+            back="回答です。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.front_quality < 0.9
+
+    def test_short_cloze_front_gets_0_7(self) -> None:
+        """Cloze with valid syntax but short front gets 0.7."""
+        card = AnkiCard(
+            front="{{c1::A}}",
+            back="",
+            card_type=CardType.CLOZE,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.front_quality == pytest.approx(0.7)
+
+    def test_reversible_long_front(self) -> None:
+        """Reversible card with front > 80 chars gets 0.8."""
+        card = AnkiCard(
+            front="あ" * 90,
+            back="説明テキスト",
+            card_type=CardType.REVERSIBLE,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.front_quality == pytest.approx(0.8)
+
+
+class TestBackQualityScoringEdgeCases:
+    """Cover uncovered branches in _score_back_quality."""
+
+    def test_empty_back_for_qa_returns_zero(self) -> None:
+        """QA card with completely empty back gets 0.0."""
+        card = AnkiCard(
+            front="テストの質問ですか？",
+            back="",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.back_quality == pytest.approx(0.0)
+
+    def test_cloze_with_non_empty_back(self) -> None:
+        """Cloze card with non-empty back gets 0.8."""
+        card = AnkiCard(
+            front="{{c1::勾配降下法}}は最適化手法。",
+            back="補足情報あり",
+            card_type=CardType.CLOZE,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.back_quality == pytest.approx(0.8)
+
+
+class TestCardTypeFitEdgeCases:
+    """Cover uncovered branches in _score_card_type_fit."""
+
+    def test_qa_with_cloze_syntax_penalty(self) -> None:
+        """QA card containing cloze syntax should get penalized."""
+        card = AnkiCard(
+            front="{{c1::テスト}}とは何ですか？",
+            back="テストの回答です。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.card_type_fit == pytest.approx(0.5)
+
+    def test_term_definition_long_front(self) -> None:
+        """Term definition with long front (>50) gets 0.7."""
+        card = AnkiCard(
+            front="非常に長い用語名を持つ定義カードのテストです" + "あ" * 40,
+            back="定義の内容",
+            card_type=CardType.TERM_DEFINITION,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.card_type_fit == pytest.approx(0.7)
+
+    def test_reversible_long_front_fit(self) -> None:
+        """Reversible card with long front (>80) gets 0.7."""
+        card = AnkiCard(
+            front="あ" * 90,
+            back="対応する回答",
+            card_type=CardType.REVERSIBLE,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.card_type_fit == pytest.approx(0.7)
+
+    def test_compare_contrast_with_keyword(self) -> None:
+        """Compare/contrast card with matching keyword gets 1.0."""
+        card = AnkiCard(
+            front="CNNとRNNの違いは何ですか？",
+            back="CNNは画像、RNNは時系列。",
+            card_type=CardType.COMPARE_CONTRAST,
+            bloom_level=BloomLevel.ANALYZE,
+            tags=["AI"],
+        )
+        score = score_card(card)
+        assert score.card_type_fit == pytest.approx(1.0)
+
+    def test_compare_contrast_without_keyword(self) -> None:
+        """Compare/contrast card without keyword gets 0.7."""
+        card = AnkiCard(
+            front="CNNとRNNについて",
+            back="それぞれの特徴を述べよ。",
+            card_type=CardType.COMPARE_CONTRAST,
+            bloom_level=BloomLevel.ANALYZE,
+            tags=["AI"],
+        )
+        score = score_card(card)
+        assert score.card_type_fit == pytest.approx(0.7)
+
+    def test_sequence_with_keyword(self) -> None:
+        """Sequence card with matching keyword gets 1.0."""
+        card = AnkiCard(
+            front="データ前処理の次のステップは？",
+            back="特徴量エンジニアリング。",
+            card_type=CardType.SEQUENCE,
+            bloom_level=BloomLevel.APPLY,
+            tags=["ML"],
+        )
+        score = score_card(card)
+        assert score.card_type_fit == pytest.approx(1.0)
+
+    def test_sequence_without_keyword(self) -> None:
+        """Sequence card without keyword gets 0.7."""
+        card = AnkiCard(
+            front="データ前処理について",
+            back="重要な概念。",
+            card_type=CardType.SEQUENCE,
+            bloom_level=BloomLevel.APPLY,
+            tags=["ML"],
+        )
+        score = score_card(card)
+        assert score.card_type_fit == pytest.approx(0.7)
+
+    def test_image_occlusion_default(self) -> None:
+        """Image occlusion (fallback branch) gets 0.8."""
+        card = AnkiCard(
+            front="画像の一部を隠した問題",
+            back="隠された部分の答え",
+            card_type=CardType.IMAGE_OCCLUSION,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.card_type_fit == pytest.approx(0.8)
+
+
+class TestAtomicityEdgeCases:
+    """Cover uncovered branches in _score_atomicity."""
+
+    def test_many_cloze_deletions_penalized(self) -> None:
+        """Cloze card with >3 deletions should get penalized."""
+        card = AnkiCard(
+            front="{{c1::A}}と{{c2::B}}と{{c3::C}}と{{c4::D}}と{{c5::E}}は重要。",
+            back="",
+            card_type=CardType.CLOZE,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.atomicity < 1.0
+        assert score.atomicity >= 0.5
+
+    def test_empty_back_non_cloze_atomicity(self) -> None:
+        """Non-cloze card with empty back gets 0.9 atomicity."""
+        card = AnkiCard(
+            front="テスト質問ですか？",
+            back="",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        score = score_card(card)
+        assert score.atomicity == pytest.approx(0.9)
+
+
+# ============================================================
+# Similarity helper edge cases
+# ============================================================
+
+
+class TestSimilarityHelpers:
+    """Test _char_bigrams, _tokenize, _jaccard edge cases."""
+
+    def test_char_bigrams_single_char(self) -> None:
+        """Single character text returns a set with that character."""
+        assert _char_bigrams("A") == {"A"}
+
+    def test_char_bigrams_empty(self) -> None:
+        """Empty text returns empty set."""
+        assert _char_bigrams("") == set()
+
+    def test_jaccard_empty_sets(self) -> None:
+        """Jaccard with empty set returns 0.0."""
+        assert _jaccard(set(), {"a"}) == pytest.approx(0.0)
+        assert _jaccard({"a"}, set()) == pytest.approx(0.0)
+
+    def test_jaccard_identical_sets(self) -> None:
+        """Jaccard with identical sets returns 1.0."""
+        assert _jaccard({"a", "b"}, {"a", "b"}) == pytest.approx(1.0)
+
+    def test_tokenize_punctuation_split(self) -> None:
+        """Tokenize splits on Japanese and English punctuation."""
+        tokens = _tokenize("AI、機械学習。深層学習")
+        assert "AI" in tokens
+        assert "機械学習" in tokens
+        assert "深層学習" in tokens
+
+
+class TestCardsSimilarAdditionalBranches:
+    """Cover remaining similarity detection branches."""
+
+    def test_high_front_similarity_same_type(self) -> None:
+        """Cards with >0.7 front bigram Jaccard and same type are duplicates."""
+        card_a = AnkiCard(
+            front="ニューラルネットワークの活性化関数の役割",
+            back="非線形変換",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.UNDERSTAND,
+            tags=["AI"],
+        )
+        card_b = AnkiCard(
+            front="ニューラルネットワークの活性化関数の機能",
+            back="入力の変換",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.UNDERSTAND,
+            tags=["ML"],
+        )
+        scores = score_cards([card_a, card_b])
+        has_dup = any(QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores)
+        assert has_dup
+
+    def test_shared_tags_moderate_front_similarity(self) -> None:
+        """Cards with same tags and moderate front similarity are duplicates."""
+        card_a = AnkiCard(
+            front="勾配降下法のアルゴリズムの説明",
+            back="パラメータを更新する手法。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.UNDERSTAND,
+            tags=["AI::最適化"],
+        )
+        card_b = AnkiCard(
+            front="勾配降下法のアルゴリズムの概要",
+            back="損失関数を最小化する方法。",
+            card_type=CardType.TERM_DEFINITION,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["AI::最適化"],
+        )
+        scores = score_cards([card_a, card_b])
+        has_dup = any(QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores)
+        assert has_dup
+
+    def test_shared_tags_moderate_back_similarity(self) -> None:
+        """Cards with same tags, same type, moderate back similarity are duplicates."""
+        card_a = AnkiCard(
+            front="ReLU？",
+            back="Rectified Linear Unit 活性化関数 f(x) = max(0, x)",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["AI::活性化関数"],
+        )
+        card_b = AnkiCard(
+            front="活性化関数ReLUの定義",
+            back="Rectified Linear Unit 関数 f(x) = max(0, x) の定義",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["AI::活性化関数"],
+        )
+        scores = score_cards([card_a, card_b])
+        has_dup = any(QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores)
+        assert has_dup
+
+    def test_not_similar_cards(self) -> None:
+        """Completely different cards should not be flagged as duplicates."""
+        card_a = AnkiCard(
+            front="ReLUとは？",
+            back="活性化関数の一種。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["AI::活性化関数"],
+        )
+        card_b = AnkiCard(
+            front="SQLインジェクションとは？",
+            back="悪意あるSQL文を注入する攻撃。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["security::攻撃"],
+        )
+        scores = score_cards([card_a, card_b])
+        has_dup = any(QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores)
+        assert not has_dup
+
+
+# ============================================================
+# _parse_critique_response edge cases
+# ============================================================
+
+
+class TestParseCritiqueResponse:
+    """Cover uncovered paths in _parse_critique_response."""
+
+    def test_json_in_code_block(self) -> None:
+        """Should extract JSON from ```json code block."""
+        response = '```json\n[{"card_index": 0, "action": "keep"}]\n```'
+        result = _parse_critique_response(response)
+        assert len(result) == 1
+        assert result[0]["action"] == "keep"
+
+    def test_invalid_json(self) -> None:
+        """Should return empty list for invalid JSON."""
+        result = _parse_critique_response("{not valid json")
+        assert result == []
+
+    def test_non_list_json(self) -> None:
+        """Should return empty list for non-array JSON."""
+        result = _parse_critique_response('{"key": "value"}')
+        assert result == []
+
+    def test_non_dict_items_skipped(self) -> None:
+        """Non-dict items in the array should be skipped."""
+        response = json.dumps([
+            "string_item",
+            {"card_index": 0, "action": "keep"},
+        ])
+        result = _parse_critique_response(response)
+        assert len(result) == 1
+
+    def test_missing_required_fields_skipped(self) -> None:
+        """Items missing card_index or action should be skipped."""
+        response = json.dumps([
+            {"card_index": 0},
+            {"action": "keep"},
+            {"card_index": 1, "action": "improve"},
+        ])
+        result = _parse_critique_response(response)
+        assert len(result) == 1
+        assert result[0]["card_index"] == 1
+
+
+# ============================================================
+# critique_cards edge cases
+# ============================================================
+
+
+class TestCritiqueCardsEdgeCases:
+    """Cover uncovered paths in critique_cards."""
+
+    def test_api_error_returns_original_cards(self) -> None:
+        """API error should return original cards unchanged."""
+        import anthropic
+
+        card = AnkiCard(
+            front="テスト質問ですか？",
+            back="テスト回答。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        tracker = CostTracker(budget_limit=1.0)
+
+        with patch(
+            "pdf2anki.quality._call_critique_api",
+            side_effect=anthropic.APIConnectionError(request=MagicMock()),
+        ):
+            result_cards, result_tracker = critique_cards(
+                cards=[card],
+                source_text="テスト",
+                cost_tracker=tracker,
+            )
+            assert len(result_cards) == 1
+            assert result_cards[0] is card
+            assert result_tracker is tracker
+
+    def test_empty_response_content(self) -> None:
+        """Empty response content returns original cards."""
+        card = AnkiCard(
+            front="テスト質問ですか？",
+            back="テスト回答。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        mock_message = MagicMock()
+        mock_message.content = []
+        mock_message.model = "claude-sonnet-4-5-20250929"
+        mock_message.usage = MagicMock(input_tokens=100, output_tokens=0)
+
+        with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
+            result_cards, _ = critique_cards(
+                cards=[card],
+                source_text="テスト",
+                cost_tracker=CostTracker(budget_limit=1.0),
+            )
+            assert len(result_cards) == 1
+
+    def test_keep_action_preserves_card(self) -> None:
+        """Cards with 'keep' action are preserved in output."""
+        card = AnkiCard(
+            front="良い質問ですか？",
+            back="良い回答です。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.UNDERSTAND,
+            tags=["test"],
+        )
+        mock_response = [
+            {"card_index": 0, "action": "keep", "reason": "Good card"},
+        ]
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text=json.dumps(mock_response))]
+        mock_message.model = "claude-sonnet-4-5-20250929"
+        mock_message.usage = MagicMock(input_tokens=200, output_tokens=100)
+
+        with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
+            result_cards, _ = critique_cards(
+                cards=[card],
+                source_text="テスト",
+                cost_tracker=CostTracker(budget_limit=1.0),
+            )
+            assert len(result_cards) == 1
+            assert result_cards[0].front == "良い質問ですか？"
+
+    def test_invalid_card_index_skipped(self) -> None:
+        """Reviews with None or non-int card_index should be skipped."""
+        card = AnkiCard(
+            front="テスト質問ですか？",
+            back="テスト回答。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        mock_response = [
+            {"card_index": None, "action": "remove"},
+            {"card_index": "bad", "action": "remove"},
+        ]
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text=json.dumps(mock_response))]
+        mock_message.model = "claude-sonnet-4-5-20250929"
+        mock_message.usage = MagicMock(input_tokens=200, output_tokens=100)
+
+        with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
+            result_cards, _ = critique_cards(
+                cards=[card],
+                source_text="テスト",
+                cost_tracker=CostTracker(budget_limit=1.0),
+            )
+            # Card not reviewed -> passes through
+            assert len(result_cards) == 1
+
+    def test_unreviewed_cards_pass_through(self) -> None:
+        """Cards not mentioned in critique response should pass through."""
+        cards = [
+            AnkiCard(
+                front="質問1ですか？",
+                back="回答1。",
+                card_type=CardType.QA,
+                bloom_level=BloomLevel.REMEMBER,
+                tags=["test"],
+            ),
+            AnkiCard(
+                front="質問2ですか？",
+                back="回答2。",
+                card_type=CardType.QA,
+                bloom_level=BloomLevel.REMEMBER,
+                tags=["test"],
+            ),
+        ]
+        mock_response = [
+            {"card_index": 0, "action": "remove"},
+        ]
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text=json.dumps(mock_response))]
+        mock_message.model = "claude-sonnet-4-5-20250929"
+        mock_message.usage = MagicMock(input_tokens=200, output_tokens=100)
+
+        with patch("pdf2anki.quality._call_critique_api", return_value=mock_message):
+            result_cards, _ = critique_cards(
+                cards=cards,
+                source_text="テスト",
+                cost_tracker=CostTracker(budget_limit=1.0),
+            )
+            assert len(result_cards) == 1
+            assert result_cards[0].front == "質問2ですか？"
+
+
+# ============================================================
+# Pipeline report counting edge cases
+# ============================================================
+
+
+class TestPipelineReportCounting:
+    """Cover removed_count and split_count branches in run_quality_pipeline."""
+
+    def test_pipeline_counts_removed_cards(
+        self, vague_question_card: AnkiCard
+    ) -> None:
+        """Report should count removed cards when critique removes some."""
+        config = AppConfig(
+            quality_confidence_threshold=0.90,
+            quality_enable_critique=True,
+        )
+        tracker = CostTracker(budget_limit=1.0)
+
+        with patch(
+            "pdf2anki.quality.critique_cards",
+            return_value=([], tracker),
+        ):
+            _, report, _ = run_quality_pipeline(
+                cards=[vague_question_card],
+                source_text="テスト",
+                config=config,
+                cost_tracker=tracker,
+            )
+            assert report.removed_cards >= 1
+
+    def test_pipeline_counts_split_cards(
+        self, vague_question_card: AnkiCard
+    ) -> None:
+        """Report should count split cards when critique splits some."""
+        config = AppConfig(
+            quality_confidence_threshold=0.90,
+            quality_enable_critique=True,
+        )
+        tracker = CostTracker(budget_limit=1.0)
+
+        split_card_a = AnkiCard(
+            front="質問Aですか？",
+            back="回答A。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+        split_card_b = AnkiCard(
+            front="質問Bですか？",
+            back="回答B。",
+            card_type=CardType.QA,
+            bloom_level=BloomLevel.REMEMBER,
+            tags=["test"],
+        )
+
+        with patch(
+            "pdf2anki.quality.critique_cards",
+            return_value=([split_card_a, split_card_b], tracker),
+        ):
+            _, report, _ = run_quality_pipeline(
+                cards=[vague_question_card],
+                source_text="テスト",
+                config=config,
+                cost_tracker=tracker,
+            )
+            assert report.split_cards >= 1

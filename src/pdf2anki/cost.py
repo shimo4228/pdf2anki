@@ -8,11 +8,22 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# Model ID constants
+MODEL_SONNET = "claude-sonnet-4-5-20250929"
+MODEL_HAIKU = "claude-haiku-4-5-20251001"
+MODEL_OPUS = "claude-opus-4-6"
+
 # Pricing per 1M tokens (USD) as of 2025-2026
 MODEL_PRICING: dict[str, dict[str, float]] = {
-    "claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
-    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00},
-    "claude-opus-4-6": {"input": 15.00, "output": 75.00},
+    MODEL_SONNET: {"input": 3.00, "output": 15.00},
+    MODEL_HAIKU: {"input": 0.80, "output": 4.00},
+    MODEL_OPUS: {"input": 15.00, "output": 75.00},
+}
+
+# Batch API pricing (50% of standard)
+BATCH_PRICING: dict[str, dict[str, float]] = {
+    model_id: {"input": p["input"] * 0.5, "output": p["output"] * 0.5}
+    for model_id, p in MODEL_PRICING.items()
 }
 
 # Fallback pricing (most expensive to avoid underestimation)
@@ -72,18 +83,30 @@ class CostTracker:
         )
 
 
-def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+def estimate_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    *,
+    batch: bool = False,
+) -> float:
     """Estimate the cost of an API call in USD.
 
     Args:
         model: Claude model ID.
         input_tokens: Number of input tokens.
         output_tokens: Number of output tokens.
+        batch: If True, use batch pricing (50% of standard).
 
     Returns:
         Estimated cost in USD.
     """
-    pricing = MODEL_PRICING.get(model, _FALLBACK_PRICING)
+    if batch:
+        fallback = {"input": _FALLBACK_PRICING["input"] * 0.5,
+                     "output": _FALLBACK_PRICING["output"] * 0.5}
+        pricing = BATCH_PRICING.get(model, fallback)
+    else:
+        pricing = MODEL_PRICING.get(model, _FALLBACK_PRICING)
     input_cost = (input_tokens / 1_000_000) * pricing["input"]
     output_cost = (output_tokens / 1_000_000) * pricing["output"]
     return input_cost + output_cost
@@ -112,6 +135,6 @@ def select_model(
         return force_model
 
     if text_length >= _SONNET_TEXT_THRESHOLD or card_count >= _SONNET_CARD_THRESHOLD:
-        return "claude-sonnet-4-5-20250929"
+        return MODEL_SONNET
 
-    return "claude-haiku-4-5-20251001"
+    return MODEL_HAIKU

@@ -23,7 +23,6 @@ from pdf2anki.schemas import (
     QualityFlag,
 )
 
-
 # ============================================================
 # CardType Enum Tests
 # ============================================================
@@ -117,7 +116,8 @@ class TestAnkiCard:
     """Test AnkiCard Pydantic model."""
 
     def test_create_qa_card(self, sample_qa_card: AnkiCard) -> None:
-        assert sample_qa_card.front == "ニューラルネットワークの活性化関数の役割は何ですか？"
+        expected = "ニューラルネットワークの活性化関数の役割は何ですか？"
+        assert sample_qa_card.front == expected
         assert sample_qa_card.card_type == CardType.QA
         assert sample_qa_card.bloom_level == BloomLevel.UNDERSTAND
         assert "AI::基礎" in sample_qa_card.tags

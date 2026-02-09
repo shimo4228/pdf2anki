@@ -8,19 +8,25 @@ Provides two subcommands:
 from __future__ import annotations
 
 import logging
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
+from pdf2anki.batch import (
+    collect_batch_results,
+    create_batch_requests,
+    poll_batch,
+    submit_batch,
+)
 from pdf2anki.config import AppConfig, load_config
 from pdf2anki.convert import write_json, write_tsv
-from pdf2anki.cost import CostTracker
+from pdf2anki.cost import CostRecord, CostTracker, estimate_cost
 from pdf2anki.extract import extract_text
 from pdf2anki.quality import QualityReport, run_quality_pipeline
-from pdf2anki.schemas import ExtractionResult
+from pdf2anki.schemas import AnkiCard, ExtractionResult
 from pdf2anki.structure import extract_cards
 
 app = typer.Typer(
@@ -35,13 +41,13 @@ _SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md"}
 _DEFAULT_OCR_LANG = "jpn+eng"
 
 
-class OutputFormat(str, Enum):
+class OutputFormat(StrEnum):
     TSV = "tsv"
     JSON = "json"
     BOTH = "both"
 
 
-class QualityLevel(str, Enum):
+class QualityLevel(StrEnum):
     OFF = "off"
     BASIC = "basic"
     FULL = "full"
@@ -89,6 +95,7 @@ def _build_config(
 
     if model is not None:
         overrides["model"] = model
+        overrides["model_overridden"] = True
     if max_cards is not None:
         overrides["cards_max_cards"] = max_cards
     if card_types is not None:
@@ -220,6 +227,7 @@ def _process_file(
     quality: QualityLevel,
     focus_topics: list[str] | None,
     additional_tags: list[str] | None,
+    batch: bool = False,
 ) -> tuple[ExtractionResult, QualityReport | None, CostTracker]:
     """Process a single file: extract -> generate cards -> quality check."""
     doc = extract_text(
@@ -230,16 +238,32 @@ def _process_file(
 
     bloom_filter = config.cards_bloom_filter or None
 
-    result, cost_tracker = extract_cards(
-        doc.text,
-        source_file=str(file_path.name),
-        config=config,
-        cost_tracker=cost_tracker,
-        chunks=list(doc.chunks) if len(doc.chunks) > 1 else None,
-        focus_topics=focus_topics,
-        bloom_filter=bloom_filter,
-        additional_tags=additional_tags,
-    )
+    # Use sections when available (structure-aware path)
+    sections_list = list(doc.sections) if doc.sections else None
+
+    # Batch API path: sections available + --batch flag
+    if batch and sections_list:
+        result, cost_tracker = _process_file_batch(
+            sections=sections_list,
+            source_file=str(file_path.name),
+            config=config,
+            cost_tracker=cost_tracker,
+            focus_topics=focus_topics,
+            bloom_filter=bloom_filter,
+            additional_tags=additional_tags,
+        )
+    else:
+        result, cost_tracker = extract_cards(
+            doc.text,
+            source_file=str(file_path.name),
+            config=config,
+            cost_tracker=cost_tracker,
+            chunks=list(doc.chunks) if len(doc.chunks) > 1 else None,
+            sections=sections_list,
+            focus_topics=focus_topics,
+            bloom_filter=bloom_filter,
+            additional_tags=additional_tags,
+        )
 
     quality_report: QualityReport | None = None
 
@@ -259,6 +283,74 @@ def _process_file(
     return result, quality_report, cost_tracker
 
 
+def _process_file_batch(
+    *,
+    sections: list,
+    source_file: str,
+    config: AppConfig,
+    cost_tracker: CostTracker,
+    focus_topics: list[str] | None,
+    bloom_filter: list[str] | None,
+    additional_tags: list[str] | None,
+) -> tuple[ExtractionResult, CostTracker]:
+    """Process sections via Batch API (50% cost savings)."""
+    requests = create_batch_requests(
+        sections,
+        document_title=source_file,
+        config=config,
+        focus_topics=focus_topics,
+        bloom_filter=bloom_filter,
+        additional_tags=additional_tags,
+    )
+
+    if not requests:
+        return ExtractionResult(
+            source_file=source_file,
+            cards=[],
+            model_used=config.model,
+        ), cost_tracker
+
+    batch_id = submit_batch(requests)
+    console.print(f"[dim]Batch submitted: {batch_id}[/dim]")
+
+    poll_batch(
+        batch_id,
+        poll_interval=config.batch_poll_interval,
+        timeout=config.batch_timeout,
+    )
+
+    batch_results = collect_batch_results(batch_id)
+
+    all_cards: list[AnkiCard] = []
+    model_used = ""
+    for br in batch_results:
+        all_cards.extend(br.cards)
+        if not model_used:
+            model_used = br.model
+
+        cost = estimate_cost(
+            model=br.model,
+            input_tokens=br.input_tokens,
+            output_tokens=br.output_tokens,
+            batch=True,
+        )
+        record = CostRecord(
+            model=br.model,
+            input_tokens=br.input_tokens,
+            output_tokens=br.output_tokens,
+            cost_usd=cost,
+        )
+        cost_tracker = cost_tracker.add(record)
+
+    result = ExtractionResult(
+        source_file=source_file,
+        cards=all_cards,
+        model_used=model_used or config.model,
+    )
+
+    return result, cost_tracker
+
+
 @app.command()
 def convert(
     input_path: str = typer.Argument(
@@ -267,37 +359,71 @@ def convert(
     output: str | None = typer.Option(
         None, "-o", "--output", help="Output file or directory"
     ),
-    fmt: OutputFormat = typer.Option(
+    fmt: OutputFormat = typer.Option(  # noqa: B008
         OutputFormat.TSV, "--format", help="Output format"
     ),
-    quality: QualityLevel = typer.Option(
-        QualityLevel.BASIC, "--quality", help="Quality pipeline level"
+    quality: QualityLevel = typer.Option(  # noqa: B008
+        QualityLevel.BASIC,
+        "--quality",
+        help="Quality pipeline level",
     ),
-    model: str | None = typer.Option(None, "--model", help="Claude model name"),
-    max_cards: int | None = typer.Option(None, "--max-cards", help="Maximum cards to generate"),
-    tags: str | None = typer.Option(None, "--tags", help="Additional tags (comma-separated)"),
-    focus: str | None = typer.Option(None, "--focus", help="Focus topics (comma-separated)"),
+    model: str | None = typer.Option(
+        None, "--model", help="Claude model name"
+    ),
+    max_cards: int | None = typer.Option(
+        None, "--max-cards", help="Maximum cards to generate"
+    ),
+    tags: str | None = typer.Option(
+        None, "--tags", help="Additional tags (comma-separated)"
+    ),
+    focus: str | None = typer.Option(
+        None, "--focus", help="Focus topics (comma-separated)"
+    ),
     card_types: str | None = typer.Option(
-        None, "--card-types", help="Card types to generate (comma-separated)"
+        None,
+        "--card-types",
+        help="Card types to generate (comma-separated)",
     ),
     bloom_filter: str | None = typer.Option(
-        None, "--bloom-filter", help="Bloom levels to include (comma-separated)"
+        None,
+        "--bloom-filter",
+        help="Bloom levels to include (comma-separated)",
     ),
-    budget_limit: float | None = typer.Option(None, "--budget-limit", help="Budget limit in USD"),
-    ocr: bool = typer.Option(False, "--ocr", help="Enable OCR for image-heavy PDFs"),
-    lang: str | None = typer.Option(None, "--lang", help="OCR language (default: jpn+eng)"),
-    config_path: str | None = typer.Option(None, "--config", help="Path to config YAML file"),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
+    budget_limit: float | None = typer.Option(
+        None, "--budget-limit", help="Budget limit in USD"
+    ),
+    ocr: bool = typer.Option(
+        False, "--ocr", help="Enable OCR for image-heavy PDFs"
+    ),
+    lang: str | None = typer.Option(
+        None, "--lang", help="OCR language (default: jpn+eng)"
+    ),
+    config_path: str | None = typer.Option(
+        None, "--config", help="Path to config YAML file"
+    ),
+    batch: bool = typer.Option(
+        False, "--batch", help="Use Batch API for 50% cost savings"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Enable debug logging"
+    ),
 ) -> None:
     """Convert PDF/TXT/MD to Anki flashcards."""
+    _log_fmt = "%(name)s %(levelname)s: %(message)s"
     if verbose:
-        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+        logging.basicConfig(level=logging.DEBUG, format=_log_fmt)
 
     try:
         config = _build_config(
-            config_path=config_path, model=model, max_cards=max_cards,
-            card_types=card_types, bloom_filter=bloom_filter,
-            budget_limit=budget_limit, ocr=ocr, lang=lang, quality=quality,
+            config_path=config_path,
+            model=model,
+            max_cards=max_cards,
+            card_types=card_types,
+            bloom_filter=bloom_filter,
+            budget_limit=budget_limit,
+            ocr=ocr,
+            lang=lang,
+            quality=quality,
         )
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -324,8 +450,13 @@ def convert(
         console.print(f"Processing: [cyan]{file_path.name}[/cyan]")
         try:
             result, report, cost_tracker = _process_file(
-                file_path=file_path, config=config, cost_tracker=cost_tracker,
-                quality=quality, focus_topics=focus_topics, additional_tags=additional_tags,
+                file_path=file_path,
+                config=config,
+                cost_tracker=cost_tracker,
+                quality=quality,
+                focus_topics=focus_topics,
+                additional_tags=additional_tags,
+                batch=batch,
             )
         except (RuntimeError, ValueError) as e:
             console.print(f"[red]Error processing {file_path.name}:[/red] {e}")
@@ -351,14 +482,23 @@ def convert(
 
 @app.command()
 def preview(
-    input_path: str = typer.Argument(..., help="Input file (PDF/TXT/MD)"),
-    ocr: bool = typer.Option(False, "--ocr", help="Enable OCR for image-heavy PDFs"),
-    lang: str | None = typer.Option(None, "--lang", help="OCR language (default: jpn+eng)"),
-    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
+    input_path: str = typer.Argument(
+        ..., help="Input file (PDF/TXT/MD)"
+    ),
+    ocr: bool = typer.Option(
+        False, "--ocr", help="Enable OCR for image-heavy PDFs"
+    ),
+    lang: str | None = typer.Option(
+        None, "--lang", help="OCR language (default: jpn+eng)"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Enable debug logging"
+    ),
 ) -> None:
     """Preview text extraction without generating cards (dry-run)."""
+    _log_fmt = "%(name)s %(levelname)s: %(message)s"
     if verbose:
-        logging.basicConfig(level=logging.DEBUG, format="%(name)s %(levelname)s: %(message)s")
+        logging.basicConfig(level=logging.DEBUG, format=_log_fmt)
 
     path = Path(input_path)
     if not path.is_file():

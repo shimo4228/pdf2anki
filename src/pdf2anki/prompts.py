@@ -7,6 +7,8 @@ user messages.
 
 from __future__ import annotations
 
+from pdf2anki.section import Section
+
 SYSTEM_PROMPT = """\
 You are an expert Anki flashcard generator. Your task is to create \
 high-quality flashcards from the provided source text.
@@ -170,7 +172,10 @@ def build_user_prompt(
 
     sections: list[str] = []
 
-    sections.append(f"Generate up to {max_cards} Anki flashcards from the following text.")
+    sections.append(
+        f"Generate up to {max_cards} Anki flashcards"
+        " from the following text."
+    )
 
     if card_types:
         sections.append(f"Card types to generate: {', '.join(card_types)}")
@@ -191,3 +196,82 @@ def build_user_prompt(
     sections.append(f"---\n\n{stripped}")
 
     return "\n\n".join(sections)
+
+
+def build_section_prompt(
+    section: Section,
+    *,
+    document_title: str = "",
+    max_cards: int = 20,
+    card_types: list[str] | None = None,
+    focus_topics: list[str] | None = None,
+    bloom_filter: list[str] | None = None,
+    additional_tags: list[str] | None = None,
+) -> str:
+    """Build a user prompt for card generation from a single Section.
+
+    Includes breadcrumb context, page range, and hierarchical tag
+    instructions to produce section-aware Anki cards.
+
+    Args:
+        section: Section object with structural metadata.
+        document_title: Document title for prompt header.
+        max_cards: Maximum number of cards for this section.
+        card_types: Specific card types to generate (None = all).
+        focus_topics: Topics to emphasize.
+        bloom_filter: Only generate cards at these Bloom levels.
+        additional_tags: Extra tags to add to all cards.
+
+    Returns:
+        Formatted user prompt string.
+
+    Raises:
+        ValueError: If section text is empty.
+    """
+    stripped = section.text.strip()
+    if not stripped:
+        raise ValueError("Section text must not be empty")
+
+    parts: list[str] = []
+
+    # Header with context
+    header_lines: list[str] = []
+    if document_title:
+        header_lines.append(f"Document: {document_title}")
+    if section.breadcrumb:
+        header_lines.append(f"Section: {section.breadcrumb}")
+    if section.page_range:
+        header_lines.append(f"Page range: {section.page_range}")
+    if header_lines:
+        parts.append("\n".join(header_lines))
+
+    parts.append(
+        f"Generate up to {max_cards} Anki flashcards from the following section."
+    )
+
+    # Hierarchical tag instruction from breadcrumb
+    if section.breadcrumb:
+        tag_hierarchy = section.breadcrumb.replace(" > ", "::")
+        parts.append(
+            f"Use hierarchical tags based on the section path: {tag_hierarchy}"
+        )
+
+    if card_types:
+        parts.append(f"Card types to generate: {', '.join(card_types)}")
+
+    if focus_topics:
+        parts.append(f"Focus on these topics: {', '.join(focus_topics)}")
+
+    if bloom_filter:
+        parts.append(
+            f"Only generate cards at these Bloom levels: {', '.join(bloom_filter)}"
+        )
+
+    if additional_tags:
+        parts.append(
+            f"Add these tags to all cards: {', '.join(additional_tags)}"
+        )
+
+    parts.append(f"---\n\n{stripped}")
+
+    return "\n\n".join(parts)

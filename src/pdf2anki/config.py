@@ -13,6 +13,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
+DEFAULT_MODEL = "claude-sonnet-4-5-20250929"
 
 _DEFAULT_CARD_TYPES = [
     "qa",
@@ -35,7 +36,8 @@ class AppConfig(BaseModel, frozen=True):
     """Application configuration. Immutable."""
 
     # Claude API
-    model: str = "claude-sonnet-4-5-20250929"
+    model: str = DEFAULT_MODEL
+    model_overridden: bool = Field(default=False, exclude=True)  # CLI-only runtime flag
     max_tokens: int = Field(default=8192, gt=0)
 
     # Quality pipeline
@@ -49,31 +51,40 @@ class AppConfig(BaseModel, frozen=True):
 
     # Cards
     cards_max_cards: int = Field(default=50, gt=0)
-    cards_card_types: list[str] = Field(default_factory=lambda: list(_DEFAULT_CARD_TYPES))
+    cards_card_types: list[str] = Field(
+        default_factory=lambda: list(_DEFAULT_CARD_TYPES)
+    )
     cards_bloom_filter: list[str] = Field(default_factory=list)
 
     # Cost
     cost_budget_limit: float = Field(default=1.00, ge=0.0)
     cost_warn_at: float = Field(default=0.80, ge=0.0, le=1.0)
 
+    # Batch API
+    batch_enabled: bool = False
+    batch_poll_interval: float = Field(default=30.0, ge=0.0)
+    batch_timeout: float = Field(default=3600.0, ge=0.0)
+
     # OCR
     ocr_enabled: bool = False
     ocr_lang: str = "jpn+eng"
 
 
-def _flatten_yaml(data: dict[str, Any]) -> dict[str, Any]:
-    """Flatten nested YAML structure to flat config fields.
+def _flatten_yaml(data: dict[str, Any], *, _prefix: str = "") -> dict[str, Any]:
+    """Flatten nested YAML structure to flat config fields (recursive).
 
     Example: {"quality": {"confidence_threshold": 0.9}}
     becomes: {"quality_confidence_threshold": 0.9}
+
+    Handles arbitrarily nested dicts by joining keys with '_'.
     """
     flat: dict[str, Any] = {}
     for key, value in data.items():
+        full_key = f"{_prefix}{key}" if not _prefix else f"{_prefix}_{key}"
         if isinstance(value, dict):
-            for sub_key, sub_value in value.items():
-                flat[f"{key}_{sub_key}"] = sub_value
+            flat.update(_flatten_yaml(value, _prefix=full_key))
         else:
-            flat[key] = value
+            flat[full_key] = value
     return flat
 
 
@@ -119,5 +130,8 @@ def load_config(config_path: str | None = None) -> AppConfig:
             config_dict = _flatten_yaml(parsed)
 
     config_dict = _apply_env_overrides(config_dict)
+
+    # Strip runtime-only fields that should not come from YAML/env
+    config_dict.pop("model_overridden", None)
 
     return AppConfig(**config_dict)

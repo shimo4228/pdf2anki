@@ -16,11 +16,13 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
+from pdf2anki.batch import BatchResult
 from pdf2anki.cost import CostTracker
 from pdf2anki.extract import ExtractedDocument
 from pdf2anki.main import _merge_quality_reports, _parse_csv_option
 from pdf2anki.quality import QualityReport
 from pdf2anki.schemas import AnkiCard, BloomLevel, CardType, ExtractionResult
+from pdf2anki.section import Section
 
 
 @pytest.fixture
@@ -31,14 +33,10 @@ def runner() -> CliRunner:
 @pytest.fixture
 def sample_txt(tmp_path: Path) -> Path:
     p = tmp_path / "test.txt"
-    p.write_text("ニューラルネットワークの基礎\n活性化関数はReLUが代表的。", encoding="utf-8")
-    return p
-
-
-@pytest.fixture
-def sample_md(tmp_path: Path) -> Path:
-    p = tmp_path / "test.md"
-    p.write_text("# 機械学習\n教師あり学習と教師なし学習がある。", encoding="utf-8")
+    p.write_text(
+        "ニューラルネットワークの基礎\n活性化関数はReLUが代表的。",
+        encoding="utf-8",
+    )
     return p
 
 
@@ -137,11 +135,21 @@ class TestConvertBasic:
     ):
         """Convert a text file to TSV (default format)."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
-        mock_quality_pipeline.return_value = (mock_cards, mock_quality_report, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+        mock_quality_pipeline.return_value = (
+            mock_cards,
+            mock_quality_report,
+            CostTracker(),
+        )
 
         output = tmp_path / "output.tsv"
-        result = runner.invoke(_get_app(), ["convert", str(sample_txt), "-o", str(output)])
+        result = runner.invoke(
+            _get_app(),
+            ["convert", str(sample_txt), "-o", str(output)],
+        )
 
         assert result.exit_code == 0
         assert output.exists()
@@ -167,12 +175,27 @@ class TestConvertBasic:
     ):
         """Convert to JSON format."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
-        mock_quality_pipeline.return_value = (mock_cards, mock_quality_report, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+        mock_quality_pipeline.return_value = (
+            mock_cards,
+            mock_quality_report,
+            CostTracker(),
+        )
 
         output = tmp_path / "output.json"
         result = runner.invoke(
-            _get_app(), ["convert", str(sample_txt), "-o", str(output), "--format", "json"]
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--format",
+                "json",
+            ],
         )
 
         assert result.exit_code == 0
@@ -199,13 +222,27 @@ class TestConvertBasic:
     ):
         """Convert to both TSV and JSON."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
-        mock_quality_pipeline.return_value = (mock_cards, mock_quality_report, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+        mock_quality_pipeline.return_value = (
+            mock_cards,
+            mock_quality_report,
+            CostTracker(),
+        )
 
         output_dir = tmp_path / "output"
         result = runner.invoke(
             _get_app(),
-            ["convert", str(sample_txt), "-o", str(output_dir), "--format", "both"],
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output_dir),
+                "--format",
+                "both",
+            ],
         )
 
         assert result.exit_code == 0
@@ -226,9 +263,12 @@ class TestConvertBasic:
         mock_extraction_result: ExtractionResult,
         mock_cards: list[AnkiCard],
     ):
-        """When no -o given, output goes to same dir as input with .tsv extension."""
+        """When no -o, output goes to same dir as input."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         result = runner.invoke(_get_app(), ["convert", str(sample_txt)])
 
@@ -263,8 +303,15 @@ class TestConvertOptions:
     ):
         """--quality full runs the quality pipeline."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
-        mock_quality_pipeline.return_value = (mock_cards, mock_quality_report, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+        mock_quality_pipeline.return_value = (
+            mock_cards,
+            mock_quality_report,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
@@ -289,7 +336,10 @@ class TestConvertOptions:
     ):
         """--quality off skips quality pipeline entirely."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
@@ -313,17 +363,32 @@ class TestConvertOptions:
     ):
         """--max-cards passes to config."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
             _get_app(),
-            ["convert", str(sample_txt), "-o", str(output), "--max-cards", "10", "--quality", "off"],
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--max-cards",
+                "10",
+                "--quality",
+                "off",
+            ],
         )
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
+        config = (
+            call_kwargs.kwargs.get("config")
+            or call_kwargs[1].get("config")
+        )
         assert config.cards_max_cards == 10
 
     @patch("pdf2anki.main.extract_cards")
@@ -340,17 +405,32 @@ class TestConvertOptions:
     ):
         """--tags passes additional tags to extract_cards."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
             _get_app(),
-            ["convert", str(sample_txt), "-o", str(output), "--tags", "AI::基礎,test", "--quality", "off"],
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--tags",
+                "AI::基礎,test",
+                "--quality",
+                "off",
+            ],
         )
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        additional_tags = call_kwargs.kwargs.get("additional_tags") or call_kwargs[1].get("additional_tags")
+        additional_tags = (
+            call_kwargs.kwargs.get("additional_tags")
+            or call_kwargs[1].get("additional_tags")
+        )
         assert "AI::基礎" in additional_tags
         assert "test" in additional_tags
 
@@ -368,17 +448,32 @@ class TestConvertOptions:
     ):
         """--focus passes focus topics to extract_cards."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
             _get_app(),
-            ["convert", str(sample_txt), "-o", str(output), "--focus", "CNN,RNN", "--quality", "off"],
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--focus",
+                "CNN,RNN",
+                "--quality",
+                "off",
+            ],
         )
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        focus_topics = call_kwargs.kwargs.get("focus_topics") or call_kwargs[1].get("focus_topics")
+        focus_topics = (
+            call_kwargs.kwargs.get("focus_topics")
+            or call_kwargs[1].get("focus_topics")
+        )
         assert "CNN" in focus_topics
         assert "RNN" in focus_topics
 
@@ -396,22 +491,32 @@ class TestConvertOptions:
     ):
         """--bloom-filter passes to extract_cards."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
             _get_app(),
             [
-                "convert", str(sample_txt),
-                "-o", str(output),
-                "--bloom-filter", "remember,understand",
-                "--quality", "off",
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--bloom-filter",
+                "remember,understand",
+                "--quality",
+                "off",
             ],
         )
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        bloom_filter = call_kwargs.kwargs.get("bloom_filter") or call_kwargs[1].get("bloom_filter")
+        bloom_filter = (
+            call_kwargs.kwargs.get("bloom_filter")
+            or call_kwargs[1].get("bloom_filter")
+        )
         assert "remember" in bloom_filter
         assert "understand" in bloom_filter
 
@@ -429,22 +534,32 @@ class TestConvertOptions:
     ):
         """--budget-limit passes to config."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
             _get_app(),
             [
-                "convert", str(sample_txt),
-                "-o", str(output),
-                "--budget-limit", "0.50",
-                "--quality", "off",
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--budget-limit",
+                "0.50",
+                "--quality",
+                "off",
             ],
         )
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
+        config = (
+            call_kwargs.kwargs.get("config")
+            or call_kwargs[1].get("config")
+        )
         assert config.cost_budget_limit == 0.50
 
     @patch("pdf2anki.main.extract_cards")
@@ -461,12 +576,23 @@ class TestConvertOptions:
     ):
         """--ocr enables OCR extraction."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
             _get_app(),
-            ["convert", str(sample_txt), "-o", str(output), "--ocr", "--quality", "off"],
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--ocr",
+                "--quality",
+                "off",
+            ],
         )
 
         assert result.exit_code == 0
@@ -487,22 +613,32 @@ class TestConvertOptions:
     ):
         """--model overrides the default model in config."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
             _get_app(),
             [
-                "convert", str(sample_txt),
-                "-o", str(output),
-                "--model", "claude-haiku-4-5-20251001",
-                "--quality", "off",
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--model",
+                "claude-haiku-4-5-20251001",
+                "--quality",
+                "off",
             ],
         )
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
+        config = (
+            call_kwargs.kwargs.get("config")
+            or call_kwargs[1].get("config")
+        )
         assert config.model == "claude-haiku-4-5-20251001"
 
     @patch("pdf2anki.main.extract_cards")
@@ -519,12 +655,23 @@ class TestConvertOptions:
     ):
         """--verbose enables debug logging."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
             _get_app(),
-            ["convert", str(sample_txt), "-o", str(output), "--verbose", "--quality", "off"],
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--verbose",
+                "--quality",
+                "off",
+            ],
         )
 
         assert result.exit_code == 0
@@ -552,12 +699,22 @@ class TestConvertDirectory:
     ):
         """Convert all supported files in a directory."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output_dir = tmp_path / "output"
         result = runner.invoke(
             _get_app(),
-            ["convert", str(sample_dir), "-o", str(output_dir), "--quality", "off"],
+            [
+                "convert",
+                str(sample_dir),
+                "-o",
+                str(output_dir),
+                "--quality",
+                "off",
+            ],
         )
 
         assert result.exit_code == 0
@@ -685,7 +842,10 @@ class TestOutputContent:
     ):
         """TSV output includes bloom:: tags."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
 
         output = tmp_path / "output.tsv"
         result = runner.invoke(
@@ -713,14 +873,22 @@ class TestOutputContent:
         mock_cards: list[AnkiCard],
         mock_quality_report: QualityReport,
     ):
-        """Convert prints a summary with card count and cost."""
+        """Convert prints summary with card count and cost."""
         mock_extract_text.return_value = mock_extracted_doc
-        mock_extract_cards.return_value = (mock_extraction_result, CostTracker())
-        mock_quality_pipeline.return_value = (mock_cards, mock_quality_report, CostTracker())
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+        mock_quality_pipeline.return_value = (
+            mock_cards,
+            mock_quality_report,
+            CostTracker(),
+        )
 
         output = tmp_path / "output.tsv"
         result = runner.invoke(
-            _get_app(), ["convert", str(sample_txt), "-o", str(output)]
+            _get_app(),
+            ["convert", str(sample_txt), "-o", str(output)],
         )
 
         assert result.exit_code == 0
@@ -779,7 +947,10 @@ class TestMergeQualityReports:
 class TestProcessFileErrorHandling:
     """Tests for error handling during file processing."""
 
-    @patch("pdf2anki.main.extract_cards", side_effect=RuntimeError("Budget exceeded"))
+    @patch(
+        "pdf2anki.main.extract_cards",
+        side_effect=RuntimeError("Budget exceeded"),
+    )
     @patch("pdf2anki.main.extract_text")
     def test_convert_continues_on_error(
         self,
@@ -796,9 +967,238 @@ class TestProcessFileErrorHandling:
         output_dir = tmp_path / "output"
         result = runner.invoke(
             _get_app(),
-            ["convert", str(sample_dir), "-o", str(output_dir), "--quality", "off"],
+            [
+                "convert",
+                str(sample_dir),
+                "-o",
+                str(output_dir),
+                "--quality",
+                "off",
+            ],
         )
 
         # Should not crash, prints errors and continues
         assert result.exit_code == 0
         assert "Error processing" in result.output
+
+
+# ============================================================
+# _process_file: section-aware processing (Phase 2)
+# ============================================================
+
+
+class TestProcessFileSections:
+    """Test that _process_file passes sections to extract_cards."""
+
+    @patch("pdf2anki.main.extract_cards")
+    @patch("pdf2anki.main.extract_text")
+    def test_sections_passed_to_extract_cards(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """When doc has sections, _process_file should pass them to extract_cards."""
+        sections = (
+            Section(
+                id="section-0",
+                heading="テスト",
+                level=1,
+                breadcrumb="テスト",
+                text="# テスト\n\n本文。",
+                page_range="",
+                char_count=12,
+            ),
+        )
+        doc_with_sections = ExtractedDocument(
+            source_path="test.txt",
+            text="# テスト\n\n本文。",
+            chunks=("# テスト\n\n本文。",),
+            file_type="txt",
+            used_ocr=False,
+            sections=sections,
+        )
+        mock_extract_text.return_value = doc_with_sections
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            ["convert", str(sample_txt), "-o", str(output), "--quality", "off"],
+        )
+
+        assert result.exit_code == 0
+        call_kwargs = mock_extract_cards.call_args
+        passed_sections = (
+            call_kwargs.kwargs.get("sections")
+            or call_kwargs[1].get("sections")
+        )
+        assert passed_sections is not None
+        assert len(passed_sections) == 1
+
+    @patch("pdf2anki.main.extract_cards")
+    @patch("pdf2anki.main.extract_text")
+    def test_no_sections_uses_chunks(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extracted_doc: ExtractedDocument,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """When doc has no sections, _process_file should not pass sections."""
+        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            ["convert", str(sample_txt), "-o", str(output), "--quality", "off"],
+        )
+
+        assert result.exit_code == 0
+        call_kwargs = mock_extract_cards.call_args
+        passed_sections = (
+            call_kwargs.kwargs.get("sections")
+            or call_kwargs[1].get("sections")
+        )
+        # No sections passed (None or not present)
+        assert passed_sections is None
+
+
+# ============================================================
+# --batch CLI flag (Phase 3)
+# ============================================================
+
+
+class TestBatchFlag:
+    """Test --batch flag for batch API processing."""
+
+    @patch("pdf2anki.main.collect_batch_results")
+    @patch("pdf2anki.main.poll_batch")
+    @patch("pdf2anki.main.submit_batch")
+    @patch("pdf2anki.main.create_batch_requests")
+    @patch("pdf2anki.main.extract_text")
+    def test_batch_flag_uses_batch_pipeline(
+        self,
+        mock_extract_text,
+        mock_create_requests,
+        mock_submit,
+        mock_poll,
+        mock_collect,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_cards: list[AnkiCard],
+    ):
+        """--batch flag should use batch API pipeline instead of standard."""
+        sections = (
+            Section(
+                id="section-0",
+                heading="テスト",
+                level=1,
+                breadcrumb="テスト",
+                text="# テスト\n\n本文。",
+                page_range="",
+                char_count=12,
+            ),
+        )
+        doc = ExtractedDocument(
+            source_path="test.txt",
+            text="# テスト\n\n本文。",
+            chunks=("# テスト\n\n本文。",),
+            file_type="txt",
+            used_ocr=False,
+            sections=sections,
+        )
+        mock_extract_text.return_value = doc
+        from pdf2anki.batch import BatchRequest
+
+        mock_create_requests.return_value = [
+            BatchRequest(
+                custom_id="section-0",
+                model="claude-haiku-4-5-20251001",
+                user_prompt="test",
+                system_prompt="system",
+                max_tokens=8192,
+            ),
+        ]
+        mock_submit.return_value = "msgbatch_123"
+        mock_poll.return_value = None
+        mock_collect.return_value = [
+            BatchResult(
+                custom_id="section-0",
+                cards=mock_cards,
+                input_tokens=500,
+                output_tokens=300,
+                model="claude-haiku-4-5-20251001",
+            ),
+        ]
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--batch",
+                "--quality",
+                "off",
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_create_requests.assert_called_once()
+        mock_submit.assert_called_once()
+        mock_poll.assert_called_once()
+        mock_collect.assert_called_once()
+
+    @patch("pdf2anki.main.extract_cards")
+    @patch("pdf2anki.main.extract_text")
+    def test_batch_without_sections_falls_back(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extracted_doc: ExtractedDocument,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """--batch without sections should fall back to standard processing."""
+        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--batch",
+                "--quality",
+                "off",
+            ],
+        )
+
+        assert result.exit_code == 0
+        # Falls back to standard extract_cards
+        mock_extract_cards.assert_called_once()
