@@ -19,10 +19,11 @@ from typer.testing import CliRunner
 from pdf2anki.batch import BatchResult
 from pdf2anki.cost import CostTracker
 from pdf2anki.extract import ExtractedDocument
-from pdf2anki.main import _merge_quality_reports, _parse_csv_option
+from pdf2anki.main import _parse_csv_option
 from pdf2anki.quality import QualityReport
 from pdf2anki.schemas import AnkiCard, BloomLevel, CardType, ExtractionResult
 from pdf2anki.section import Section
+from pdf2anki.service import merge_quality_reports
 
 
 @pytest.fixture
@@ -117,9 +118,9 @@ def _get_app():
 class TestConvertBasic:
     """Basic convert subcommand tests."""
 
-    @patch("pdf2anki.main.run_quality_pipeline")
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.run_quality_pipeline")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_convert_txt_to_tsv(
         self,
         mock_extract_text,
@@ -157,9 +158,9 @@ class TestConvertBasic:
         assert "#separator:tab" in content
         assert "ReLU" in content
 
-    @patch("pdf2anki.main.run_quality_pipeline")
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.run_quality_pipeline")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_convert_to_json(
         self,
         mock_extract_text,
@@ -204,9 +205,9 @@ class TestConvertBasic:
         assert '"source_file"' in content
         assert '"_meta"' in content
 
-    @patch("pdf2anki.main.run_quality_pipeline")
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.run_quality_pipeline")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_convert_to_both(
         self,
         mock_extract_text,
@@ -251,8 +252,8 @@ class TestConvertBasic:
         assert len(tsv_files) == 1
         assert len(json_files) == 1
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_convert_default_output_path(
         self,
         mock_extract_text,
@@ -285,9 +286,9 @@ class TestConvertBasic:
 class TestConvertOptions:
     """Tests for convert command options."""
 
-    @patch("pdf2anki.main.run_quality_pipeline")
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.run_quality_pipeline")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_quality_full(
         self,
         mock_extract_text,
@@ -322,8 +323,8 @@ class TestConvertOptions:
         assert result.exit_code == 0
         mock_quality_pipeline.assert_called_once()
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_quality_off_skips_pipeline(
         self,
         mock_extract_text,
@@ -349,8 +350,8 @@ class TestConvertOptions:
 
         assert result.exit_code == 0
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_max_cards_option(
         self,
         mock_extract_text,
@@ -391,8 +392,8 @@ class TestConvertOptions:
         )
         assert config.cards_max_cards == 10
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_tags_option(
         self,
         mock_extract_text,
@@ -434,8 +435,8 @@ class TestConvertOptions:
         assert "AI::基礎" in additional_tags
         assert "test" in additional_tags
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_focus_option(
         self,
         mock_extract_text,
@@ -477,8 +478,8 @@ class TestConvertOptions:
         assert "CNN" in focus_topics
         assert "RNN" in focus_topics
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_bloom_filter_option(
         self,
         mock_extract_text,
@@ -520,8 +521,8 @@ class TestConvertOptions:
         assert "remember" in bloom_filter
         assert "understand" in bloom_filter
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_budget_limit_option(
         self,
         mock_extract_text,
@@ -562,8 +563,8 @@ class TestConvertOptions:
         )
         assert config.cost_budget_limit == 0.50
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_ocr_option(
         self,
         mock_extract_text,
@@ -599,8 +600,8 @@ class TestConvertOptions:
         call_kwargs = mock_extract_text.call_args
         assert call_kwargs.kwargs.get("ocr_enabled") is True
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_model_option(
         self,
         mock_extract_text,
@@ -641,8 +642,8 @@ class TestConvertOptions:
         )
         assert config.model == "claude-haiku-4-5-20251001"
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_verbose_option(
         self,
         mock_extract_text,
@@ -685,8 +686,8 @@ class TestConvertOptions:
 class TestConvertDirectory:
     """Tests for directory batch processing."""
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_convert_directory(
         self,
         mock_extract_text,
@@ -828,8 +829,8 @@ class TestPreview:
 class TestOutputContent:
     """Verify output file content correctness."""
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_tsv_contains_bloom_tags(
         self,
         mock_extract_text,
@@ -857,9 +858,9 @@ class TestOutputContent:
         content = output.read_text(encoding="utf-8")
         assert "bloom::remember" in content
 
-    @patch("pdf2anki.main.run_quality_pipeline")
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.run_quality_pipeline")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_convert_shows_summary(  # noqa: PLR0913
         self,
         mock_extract_text,
@@ -918,10 +919,10 @@ class TestParseCsvOption:
 
 
 class TestMergeQualityReports:
-    """Tests for _merge_quality_reports helper."""
+    """Tests for merge_quality_reports (service layer)."""
 
     def test_single_report(self, mock_quality_report: QualityReport):
-        merged = _merge_quality_reports([mock_quality_report])
+        merged = merge_quality_reports([mock_quality_report])
         assert merged.total_cards == 2
         assert merged.passed_cards == 2
 
@@ -934,7 +935,7 @@ class TestMergeQualityReports:
             total_cards=10, passed_cards=8, critiqued_cards=2,
             removed_cards=0, improved_cards=2, split_cards=1, final_card_count=11,
         )
-        merged = _merge_quality_reports([r1, r2])
+        merged = merge_quality_reports([r1, r2])
         assert merged.total_cards == 15
         assert merged.passed_cards == 11
         assert merged.critiqued_cards == 4
@@ -948,10 +949,10 @@ class TestProcessFileErrorHandling:
     """Tests for error handling during file processing."""
 
     @patch(
-        "pdf2anki.main.extract_cards",
+        "pdf2anki.service.extract_cards",
         side_effect=RuntimeError("Budget exceeded"),
     )
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_text")
     def test_convert_continues_on_error(
         self,
         mock_extract_text,
@@ -990,8 +991,8 @@ class TestProcessFileErrorHandling:
 class TestProcessFileSections:
     """Test that _process_file passes sections to extract_cards."""
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_sections_passed_to_extract_cards(
         self,
         mock_extract_text,
@@ -1042,8 +1043,8 @@ class TestProcessFileSections:
         assert passed_sections is not None
         assert len(passed_sections) == 1
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_no_sections_uses_chunks(
         self,
         mock_extract_text,
@@ -1085,11 +1086,11 @@ class TestProcessFileSections:
 class TestBatchFlag:
     """Test --batch flag for batch API processing."""
 
-    @patch("pdf2anki.main.collect_batch_results")
-    @patch("pdf2anki.main.poll_batch")
-    @patch("pdf2anki.main.submit_batch")
-    @patch("pdf2anki.main.create_batch_requests")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.collect_batch_results")
+    @patch("pdf2anki.service.poll_batch")
+    @patch("pdf2anki.service.submit_batch")
+    @patch("pdf2anki.service.create_batch_requests")
+    @patch("pdf2anki.service.extract_text")
     def test_batch_flag_uses_batch_pipeline(
         self,
         mock_extract_text,
@@ -1166,8 +1167,8 @@ class TestBatchFlag:
         mock_poll.assert_called_once()
         mock_collect.assert_called_once()
 
-    @patch("pdf2anki.main.extract_cards")
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
     def test_batch_without_sections_falls_back(
         self,
         mock_extract_text,
