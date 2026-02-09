@@ -32,5 +32,9 @@ output/
 htmlcov/
 .pytest_cache/
 
+# Generated reports / codemaps
+.reports/
+codemaps/
+
 # uv
 uv.lock

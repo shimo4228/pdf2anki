@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pymupdf4llm  # type: ignore[import-untyped]
 
+from pdf2anki.section import Section, split_by_headings
+
 # Approximate token limit for a single chunk (150K tokens ≈ 600K chars)
 DEFAULT_TOKEN_LIMIT = 150_000
 CHARS_PER_TOKEN = 4  # conservative estimate for mixed JP/EN
@@ -38,6 +40,7 @@ class ExtractedDocument:
     chunks: tuple[str, ...]
     file_type: str
     used_ocr: bool
+    sections: tuple[Section, ...] = ()
 
 
 def preprocess_text(raw: str) -> str:
@@ -171,12 +174,16 @@ def extract_text(
     text = preprocess_text(raw_text)
     chunks = split_into_chunks(text, token_limit=token_limit)
 
+    # Structure-aware sectioning for all file types
+    sections = split_by_headings(text, document_title=path.stem)
+
     return ExtractedDocument(
         source_path=str(file_path),
         text=text,
         chunks=tuple(chunks),
         file_type=file_type,
         used_ocr=used_ocr,
+        sections=tuple(sections),
     )
 
 
