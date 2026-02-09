@@ -16,10 +16,11 @@ from pdf2anki.batch import (
     poll_batch,
     submit_batch,
 )
+from pdf2anki.cache import CacheEntry, compute_file_hash, read_cache, write_cache
 from pdf2anki.config import AppConfig
 from pdf2anki.convert import write_json, write_tsv
 from pdf2anki.cost import CostRecord, CostTracker, estimate_cost
-from pdf2anki.extract import extract_text
+from pdf2anki.extract import ExtractedDocument, extract_text
 from pdf2anki.quality import QualityReport, run_quality_pipeline
 from pdf2anki.schemas import AnkiCard, ExtractionResult
 from pdf2anki.section import Section
@@ -133,6 +134,56 @@ def merge_quality_reports(reports: list[QualityReport]) -> QualityReport:
     )
 
 
+def extract_with_cache(
+    file_path: Path,
+    *,
+    config: AppConfig,
+) -> ExtractedDocument:
+    """Extract text with optional caching.
+
+    When cache is enabled, computes SHA-256 of the file and checks
+    for a cached ExtractedDocument. On miss, runs extract_text() and
+    stores the result. When disabled, delegates directly to extract_text().
+
+    Args:
+        file_path: Path to the input file.
+        config: Application configuration (cache settings + OCR settings).
+
+    Returns:
+        ExtractedDocument from cache or fresh extraction.
+    """
+    if not config.cache_enabled:
+        return extract_text(
+            file_path,
+            ocr_enabled=config.ocr_enabled,
+            ocr_lang=config.ocr_lang,
+        )
+
+    cache_dir = Path(config.cache_dir)
+    file_hash = compute_file_hash(file_path)
+
+    cached = read_cache(cache_dir, file_hash)
+    if cached is not None:
+        logger.info("Cache hit: %s (hash=%s)", file_path.name, file_hash[:12])
+        return cached.document
+
+    logger.info("Cache miss: %s (hash=%s)", file_path.name, file_hash[:12])
+    doc = extract_text(
+        file_path,
+        ocr_enabled=config.ocr_enabled,
+        ocr_lang=config.ocr_lang,
+    )
+
+    entry = CacheEntry(
+        file_hash=file_hash,
+        source_path=str(file_path),
+        document=doc,
+    )
+    write_cache(cache_dir, entry)
+
+    return doc
+
+
 def process_file(
     *,
     file_path: Path,
@@ -148,11 +199,7 @@ def process_file(
     Args:
         quality: Quality level string ("off", "basic", "full").
     """
-    doc = extract_text(
-        file_path,
-        ocr_enabled=config.ocr_enabled,
-        ocr_lang=config.ocr_lang,
-    )
+    doc = extract_with_cache(file_path, config=config)
 
     bloom_filter = config.cards_bloom_filter or None
     sections_list = list(doc.sections) if doc.sections else None

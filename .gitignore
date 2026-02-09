@@ -27,6 +27,9 @@ Thumbs.db
 # Project output (personal data)
 output/
 
+# Extraction cache
+.cache/
+
 # Test / Coverage
 .coverage
 htmlcov/

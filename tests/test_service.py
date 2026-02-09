@@ -303,7 +303,7 @@ class TestProcessFile:
 
     @patch("pdf2anki.service.run_quality_pipeline")
     @patch("pdf2anki.service.extract_cards")
-    @patch("pdf2anki.service.extract_text")
+    @patch("pdf2anki.service.extract_with_cache")
     def test_with_quality_basic(
         self,
         mock_extract_text,
@@ -344,7 +344,7 @@ class TestProcessFile:
         mock_quality_pipeline.assert_called_once()
 
     @patch("pdf2anki.service.extract_cards")
-    @patch("pdf2anki.service.extract_text")
+    @patch("pdf2anki.service.extract_with_cache")
     def test_quality_off_skips_pipeline(
         self,
         mock_extract_text,
@@ -379,7 +379,7 @@ class TestProcessFile:
     @patch("pdf2anki.service.poll_batch")
     @patch("pdf2anki.service.submit_batch")
     @patch("pdf2anki.service.create_batch_requests")
-    @patch("pdf2anki.service.extract_text")
+    @patch("pdf2anki.service.extract_with_cache")
     def test_batch_mode(
         self,
         mock_extract_text,
@@ -449,3 +449,70 @@ class TestProcessFile:
         assert result.card_count >= 1
         mock_create_requests.assert_called_once()
         mock_submit.assert_called_once()
+
+
+# ============================================================
+# extract_with_cache
+# ============================================================
+
+
+class TestExtractWithCache:
+    """Tests for extract_with_cache — cache integration with extract_text."""
+
+    def test_cache_disabled_calls_extract(self, sample_txt: Path) -> None:
+        """When cache_enabled=False, always calls extract_text."""
+        from pdf2anki.config import AppConfig
+        from pdf2anki.service import extract_with_cache
+
+        config = AppConfig(cache_enabled=False)
+        doc = extract_with_cache(sample_txt, config=config)
+        assert doc.text  # extracted something
+        assert doc.source_path == str(sample_txt)
+
+    def test_cache_miss_extracts_and_caches(self, sample_txt: Path, tmp_path: Path) -> None:
+        """On cache miss, extract and write cache entry."""
+        from pdf2anki.config import AppConfig
+        from pdf2anki.service import extract_with_cache
+
+        cache_dir = tmp_path / "cache"
+        config = AppConfig(cache_enabled=True, cache_dir=str(cache_dir))
+        doc = extract_with_cache(sample_txt, config=config)
+        assert doc.text
+        # Cache file should exist
+        cache_files = list(cache_dir.glob("*.json"))
+        assert len(cache_files) == 1
+
+    def test_cache_hit_skips_extraction(self, sample_txt: Path, tmp_path: Path) -> None:
+        """On cache hit, return cached doc without calling extract_text again."""
+        from pdf2anki.config import AppConfig
+        from pdf2anki.service import extract_with_cache
+
+        cache_dir = tmp_path / "cache"
+        config = AppConfig(cache_enabled=True, cache_dir=str(cache_dir))
+
+        # First call: extract and cache
+        doc1 = extract_with_cache(sample_txt, config=config)
+
+        # Second call: should hit cache
+        with patch("pdf2anki.service.extract_text") as mock_et:
+            doc2 = extract_with_cache(sample_txt, config=config)
+            mock_et.assert_not_called()
+
+        assert doc2.text == doc1.text
+
+    def test_cache_invalidated_re_extracts(self, sample_txt: Path, tmp_path: Path) -> None:
+        """After content change (hash change), re-extract."""
+        from pdf2anki.config import AppConfig
+        from pdf2anki.service import extract_with_cache
+
+        cache_dir = tmp_path / "cache"
+        config = AppConfig(cache_enabled=True, cache_dir=str(cache_dir))
+
+        doc1 = extract_with_cache(sample_txt, config=config)
+
+        # Modify the file
+        sample_txt.write_text("変更されたテキスト。", encoding="utf-8")
+
+        doc2 = extract_with_cache(sample_txt, config=config)
+        assert doc2.text != doc1.text
+        assert "変更されたテキスト" in doc2.text

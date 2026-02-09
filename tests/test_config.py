@@ -221,3 +221,38 @@ batch:
     def test_batch_invalid_timeout(self) -> None:
         with pytest.raises(ValidationError):
             AppConfig(batch_timeout=-1.0)
+
+
+# ============================================================
+# Cache Config Tests
+# ============================================================
+
+
+class TestCacheConfig:
+    """Test cache-related configuration fields."""
+
+    def test_cache_defaults(self) -> None:
+        config = AppConfig()
+        assert config.cache_enabled is False
+        assert config.cache_dir == ".cache/pdf2anki"
+
+    def test_cache_enabled_override(self) -> None:
+        config = AppConfig(cache_enabled=True)
+        assert config.cache_enabled is True
+
+    def test_cache_custom_dir(self) -> None:
+        config = AppConfig(cache_dir="/tmp/my_cache")
+        assert config.cache_dir == "/tmp/my_cache"
+
+    def test_cache_from_yaml(self, tmp_path: Path) -> None:
+        yaml_content = """
+cache:
+  enabled: true
+  dir: ".my_cache"
+"""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml_content)
+
+        config = load_config(config_path=str(config_file))
+        assert config.cache_enabled is True
+        assert config.cache_dir == ".my_cache"

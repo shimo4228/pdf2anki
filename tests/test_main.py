@@ -760,26 +760,26 @@ class TestConvertErrors:
 class TestPreview:
     """Tests for preview (dry-run) subcommand."""
 
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.main.extract_with_cache")
     def test_preview_shows_text(
         self,
-        mock_extract_text,
+        mock_extract,
         runner: CliRunner,
         sample_txt: Path,
         mock_extracted_doc: ExtractedDocument,
     ):
         """Preview displays extracted text and metadata."""
-        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract.return_value = mock_extracted_doc
 
         result = runner.invoke(_get_app(), ["preview", str(sample_txt)])
 
         assert result.exit_code == 0
         assert "test.txt" in result.output or "txt" in result.output
 
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.main.extract_with_cache")
     def test_preview_shows_chunks(
         self,
-        mock_extract_text,
+        mock_extract,
         runner: CliRunner,
         sample_txt: Path,
     ):
@@ -791,7 +791,7 @@ class TestPreview:
             file_type="txt",
             used_ocr=False,
         )
-        mock_extract_text.return_value = doc
+        mock_extract.return_value = doc
 
         result = runner.invoke(_get_app(), ["preview", str(sample_txt)])
 
@@ -803,22 +803,23 @@ class TestPreview:
         result = runner.invoke(_get_app(), ["preview", "/nonexistent/file.txt"])
         assert result.exit_code != 0
 
-    @patch("pdf2anki.main.extract_text")
+    @patch("pdf2anki.main.extract_with_cache")
     def test_preview_with_ocr(
         self,
-        mock_extract_text,
+        mock_extract,
         runner: CliRunner,
         sample_txt: Path,
         mock_extracted_doc: ExtractedDocument,
     ):
-        """Preview with OCR flag."""
-        mock_extract_text.return_value = mock_extracted_doc
+        """Preview with OCR flag passes ocr config."""
+        mock_extract.return_value = mock_extracted_doc
 
         result = runner.invoke(_get_app(), ["preview", str(sample_txt), "--ocr"])
 
         assert result.exit_code == 0
-        call_kwargs = mock_extract_text.call_args
-        assert call_kwargs.kwargs.get("ocr_enabled") is True
+        call_kwargs = mock_extract.call_args
+        config = call_kwargs.kwargs.get("config")
+        assert config.ocr_enabled is True
 
 
 # ============================================================

@@ -37,3 +37,8 @@ cost:
 ocr:
   enabled: false
   lang: "jpn+eng"
+
+# Cache settings
+cache:
+  enabled: false
+  dir: ".cache/pdf2anki"

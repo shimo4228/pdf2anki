@@ -69,6 +69,10 @@ class AppConfig(BaseModel, frozen=True):
     ocr_enabled: bool = False
     ocr_lang: str = "jpn+eng"
 
+    # Cache
+    cache_enabled: bool = False
+    cache_dir: str = ".cache/pdf2anki"
+
 
 def _flatten_yaml(data: dict[str, Any], *, _prefix: str = "") -> dict[str, Any]:
     """Flatten nested YAML structure to flat config fields (recursive).

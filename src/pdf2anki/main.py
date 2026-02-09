@@ -18,10 +18,10 @@ from rich.table import Table
 
 from pdf2anki.config import AppConfig, load_config
 from pdf2anki.cost import CostTracker
-from pdf2anki.extract import extract_text
 from pdf2anki.quality import QualityReport
 from pdf2anki.service import (
     collect_files,
+    extract_with_cache,
     merge_quality_reports,
     process_file,
     resolve_output_path,
@@ -63,6 +63,7 @@ def _build_config(
     ocr: bool,
     lang: str | None,
     quality: QualityLevel,
+    cache: bool | None,
 ) -> AppConfig:
     """Build AppConfig from base config + CLI overrides."""
     base = load_config(config_path)
@@ -84,6 +85,8 @@ def _build_config(
         overrides["ocr_enabled"] = True
     if lang is not None:
         overrides["ocr_lang"] = lang
+    if cache is not None:
+        overrides["cache_enabled"] = cache
 
     if quality == QualityLevel.OFF:
         overrides["quality_enable_critique"] = False
@@ -184,6 +187,12 @@ def convert(
     batch: bool = typer.Option(
         False, "--batch", help="Use Batch API for 50% cost savings"
     ),
+    cache: bool | None = typer.Option(
+        None, "--cache/--no-cache", help="Enable/disable extraction cache"
+    ),
+    cache_clear: bool = typer.Option(
+        False, "--cache-clear", help="Clear extraction cache before processing"
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", help="Enable debug logging"
     ),
@@ -204,10 +213,17 @@ def convert(
             ocr=ocr,
             lang=lang,
             quality=quality,
+            cache=cache,
         )
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1) from e
+
+    if cache_clear:
+        from pdf2anki.cache import invalidate_cache as _invalidate
+
+        count = _invalidate(Path(config.cache_dir))
+        console.print(f"[yellow]Cache cleared:[/yellow] {count} entries removed")
 
     path = Path(input_path)
     try:
@@ -271,6 +287,9 @@ def preview(
     lang: str | None = typer.Option(
         None, "--lang", help="OCR language (default: jpn+eng)"
     ),
+    cache: bool | None = typer.Option(
+        None, "--cache/--no-cache", help="Enable/disable extraction cache"
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", help="Enable debug logging"
     ),
@@ -291,7 +310,12 @@ def preview(
 
     ocr_lang = lang if lang else _DEFAULT_OCR_LANG
 
-    doc = extract_text(path, ocr_enabled=ocr, ocr_lang=ocr_lang)
+    config = AppConfig(
+        ocr_enabled=ocr,
+        ocr_lang=ocr_lang,
+        cache_enabled=cache if cache is not None else False,
+    )
+    doc = extract_with_cache(path, config=config)
 
     table = Table(title="Preview: Text Extraction", show_header=False)
     table.add_column("Key", style="bold")
