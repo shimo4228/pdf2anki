@@ -238,7 +238,7 @@ class TestE2ETxtToTsv:
         ]
         assert len(data_lines) >= 3  # 3 cards
 
-    @patch("pdf2anki.quality.anthropic.Anthropic")
+    @patch("pdf2anki.quality.critique.anthropic.Anthropic")
     @patch("pdf2anki.structure.anthropic.Anthropic")
     def test_txt_to_tsv_quality_full(
         self,
