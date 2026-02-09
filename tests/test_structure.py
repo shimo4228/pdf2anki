@@ -20,6 +20,7 @@ from pydantic import ValidationError
 from pdf2anki.config import AppConfig
 from pdf2anki.cost import CostRecord, CostTracker
 from pdf2anki.schemas import AnkiCard, BloomLevel, CardType, ExtractionResult
+from pdf2anki.section import Section
 from pdf2anki.structure import (
     _parse_cards_response,
     extract_cards,
