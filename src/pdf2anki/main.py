@@ -89,6 +89,7 @@ def _build_config(
 
     if model is not None:
         overrides["model"] = model
+        overrides["model_overridden"] = True
     if max_cards is not None:
         overrides["cards_max_cards"] = max_cards
     if card_types is not None:
@@ -230,12 +231,16 @@ def _process_file(
 
     bloom_filter = config.cards_bloom_filter or None
 
+    # Use sections when available (structure-aware path)
+    sections_list = list(doc.sections) if doc.sections else None
+
     result, cost_tracker = extract_cards(
         doc.text,
         source_file=str(file_path.name),
         config=config,
         cost_tracker=cost_tracker,
         chunks=list(doc.chunks) if len(doc.chunks) > 1 else None,
+        sections=sections_list,
         focus_topics=focus_topics,
         bloom_filter=bloom_filter,
         additional_tags=additional_tags,

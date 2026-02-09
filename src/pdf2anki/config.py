@@ -37,6 +37,7 @@ class AppConfig(BaseModel, frozen=True):
 
     # Claude API
     model: str = DEFAULT_MODEL
+    model_overridden: bool = Field(default=False, exclude=True)  # CLI-only runtime flag
     max_tokens: int = Field(default=8192, gt=0)
 
     # Quality pipeline
@@ -124,5 +125,8 @@ def load_config(config_path: str | None = None) -> AppConfig:
             config_dict = _flatten_yaml(parsed)
 
     config_dict = _apply_env_overrides(config_dict)
+
+    # Strip runtime-only fields that should not come from YAML/env
+    config_dict.pop("model_overridden", None)
 
     return AppConfig(**config_dict)

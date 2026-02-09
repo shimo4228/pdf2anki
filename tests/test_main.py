@@ -21,6 +21,7 @@ from pdf2anki.extract import ExtractedDocument
 from pdf2anki.main import _merge_quality_reports, _parse_csv_option
 from pdf2anki.quality import QualityReport
 from pdf2anki.schemas import AnkiCard, BloomLevel, CardType, ExtractionResult
+from pdf2anki.section import Section
 
 
 @pytest.fixture
@@ -978,3 +979,98 @@ class TestProcessFileErrorHandling:
         # Should not crash, prints errors and continues
         assert result.exit_code == 0
         assert "Error processing" in result.output
+
+
+# ============================================================
+# _process_file: section-aware processing (Phase 2)
+# ============================================================
+
+
+class TestProcessFileSections:
+    """Test that _process_file passes sections to extract_cards."""
+
+    @patch("pdf2anki.main.extract_cards")
+    @patch("pdf2anki.main.extract_text")
+    def test_sections_passed_to_extract_cards(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """When doc has sections, _process_file should pass them to extract_cards."""
+        sections = (
+            Section(
+                id="section-0",
+                heading="テスト",
+                level=1,
+                breadcrumb="テスト",
+                text="# テスト\n\n本文。",
+                page_range="",
+                char_count=12,
+            ),
+        )
+        doc_with_sections = ExtractedDocument(
+            source_path="test.txt",
+            text="# テスト\n\n本文。",
+            chunks=("# テスト\n\n本文。",),
+            file_type="txt",
+            used_ocr=False,
+            sections=sections,
+        )
+        mock_extract_text.return_value = doc_with_sections
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            ["convert", str(sample_txt), "-o", str(output), "--quality", "off"],
+        )
+
+        assert result.exit_code == 0
+        call_kwargs = mock_extract_cards.call_args
+        passed_sections = (
+            call_kwargs.kwargs.get("sections")
+            or call_kwargs[1].get("sections")
+        )
+        assert passed_sections is not None
+        assert len(passed_sections) == 1
+
+    @patch("pdf2anki.main.extract_cards")
+    @patch("pdf2anki.main.extract_text")
+    def test_no_sections_uses_chunks(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extracted_doc: ExtractedDocument,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """When doc has no sections, _process_file should not pass sections."""
+        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            ["convert", str(sample_txt), "-o", str(output), "--quality", "off"],
+        )
+
+        assert result.exit_code == 0
+        call_kwargs = mock_extract_cards.call_args
+        passed_sections = (
+            call_kwargs.kwargs.get("sections")
+            or call_kwargs[1].get("sections")
+        )
+        # No sections passed (None or not present)
+        assert passed_sections is None

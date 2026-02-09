@@ -446,3 +446,245 @@ class TestExtractCards:
             config=config,
         )
         assert result.card_count == 0
+
+
+# ============================================================
+# extract_cards with sections (Phase 2)
+# ============================================================
+
+
+def _make_test_sections() -> list[Section]:
+    """Create test sections for section-aware extraction tests."""
+    return [
+        Section(
+            id="section-0",
+            heading="序論",
+            level=1,
+            breadcrumb="正理の海 > 序論",
+            text="# 序論\n\n序論の内容。因明の概要。",
+            page_range="pp.1-5",
+            char_count=20,
+        ),
+        Section(
+            id="section-1",
+            heading="第1章",
+            level=1,
+            breadcrumb="正理の海 > 第1章",
+            text="# 第1章\n\n第1章の内容。論書名の意味。",
+            page_range="pp.6-20",
+            char_count=22,
+        ),
+    ]
+
+
+class TestExtractCardsWithSections:
+    """Test extract_cards when sections are provided (Phase 2)."""
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_each_get_api_call(self, mock_api: MagicMock) -> None:
+        """Each section should generate a separate API call."""
+        mock_api.return_value = _make_mock_response(
+            json.dumps([{
+                "front": "Q?",
+                "back": "A.",
+                "card_type": "qa",
+                "bloom_level": "remember",
+                "tags": ["test"],
+                "related_concepts": [],
+                "mnemonic_hint": None,
+            }])
+        )
+
+        config = AppConfig()
+        sections = _make_test_sections()
+        result, tracker = extract_cards(
+            text="Full document text.",
+            source_file="test.pdf",
+            config=config,
+            sections=sections,
+        )
+
+        assert mock_api.call_count == 2  # one per section
+        assert result.card_count == 2  # 1 card per section
+        assert tracker.request_count == 2
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_use_build_section_prompt(
+        self, mock_api: MagicMock
+    ) -> None:
+        """When sections are provided, build_section_prompt should be used."""
+        mock_api.return_value = _make_mock_response("[]")
+
+        config = AppConfig()
+        sections = _make_test_sections()
+
+        with patch("pdf2anki.structure.build_section_prompt") as mock_bsp:
+            mock_bsp.return_value = "mocked section prompt"
+            extract_cards(
+                text="Full document text.",
+                source_file="test.pdf",
+                config=config,
+                sections=sections,
+            )
+            assert mock_bsp.call_count == 2
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_prompt_contains_breadcrumb(
+        self, mock_api: MagicMock
+    ) -> None:
+        """API call should include breadcrumb context from section."""
+        mock_api.return_value = _make_mock_response("[]")
+
+        config = AppConfig()
+        sections = _make_test_sections()
+        extract_cards(
+            text="Full document text.",
+            source_file="test.pdf",
+            config=config,
+            sections=sections,
+        )
+
+        # Check first API call's user message contains breadcrumb
+        first_call = mock_api.call_args_list[0]
+        messages = first_call[1]["messages"]
+        user_content = messages[0]["content"]
+        assert "序論" in user_content
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_model_routing_per_section(
+        self, mock_api: MagicMock
+    ) -> None:
+        """Model should be selected based on section.char_count, not full text."""
+        mock_api.return_value = _make_mock_response("[]")
+
+        # Small sections -> should route to Haiku (< 10_000 chars)
+        config = AppConfig()
+        sections = _make_test_sections()
+        extract_cards(
+            text="A" * 50_000,  # Large full text
+            source_file="test.pdf",
+            config=config,
+            sections=sections,
+        )
+
+        # Model in the API call should be Haiku (sections are small)
+        first_call = mock_api.call_args_list[0]
+        model_used = first_call[1]["model"]
+        assert "haiku" in model_used
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_budget_stops_mid_processing(
+        self, mock_api: MagicMock
+    ) -> None:
+        """Budget exceeded mid-section should stop remaining sections."""
+        mock_response = MagicMock()
+        mock_response.content = [MagicMock(text="[]")]
+        mock_response.model = "claude-sonnet-4-5-20250929"
+        mock_response.usage.input_tokens = 100_000
+        mock_response.usage.output_tokens = 50_000
+        mock_api.return_value = mock_response
+
+        config = AppConfig()
+        sections = _make_test_sections()
+        result, tracker = extract_cards(
+            text="Full text.",
+            source_file="test.pdf",
+            config=config,
+            cost_tracker=CostTracker(budget_limit=0.001),
+            sections=sections,
+        )
+
+        # Only first section processed, budget exceeded before second
+        assert mock_api.call_count == 1
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_none_falls_back_to_chunks(
+        self, mock_api: MagicMock
+    ) -> None:
+        """When sections=None, should use existing chunks path."""
+        mock_api.return_value = _make_mock_response("[]")
+
+        config = AppConfig()
+        result, _ = extract_cards(
+            text="Some text.",
+            source_file="test.txt",
+            config=config,
+            sections=None,
+        )
+        assert mock_api.call_count == 1
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_empty_list_falls_back(
+        self, mock_api: MagicMock
+    ) -> None:
+        """Empty sections list should fall back to chunks path."""
+        mock_api.return_value = _make_mock_response("[]")
+
+        config = AppConfig()
+        result, _ = extract_cards(
+            text="Some text.",
+            source_file="test.txt",
+            config=config,
+            sections=[],
+        )
+        # Should process text directly, not iterate empty sections
+        assert mock_api.call_count == 1
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_stop_at_document_card_limit(
+        self, mock_api: MagicMock
+    ) -> None:
+        """Should stop processing sections when total cards reach config limit."""
+        # Each API call returns 15 cards
+        many_cards = json.dumps([
+            {
+                "front": f"Q{i}?",
+                "back": f"A{i}.",
+                "card_type": "qa",
+                "bloom_level": "remember",
+                "tags": ["test"],
+                "related_concepts": [],
+                "mnemonic_hint": None,
+            }
+            for i in range(15)
+        ])
+        mock_api.return_value = _make_mock_response(many_cards)
+
+        # Config limit: 20 cards total
+        config = AppConfig(cards_max_cards=20)
+        sections = _make_test_sections()  # 2 sections
+        result, _ = extract_cards(
+            text="Full text.",
+            source_file="test.pdf",
+            config=config,
+            sections=sections,
+        )
+
+        # First section: 15 cards (< 20 limit) -> continue
+        # Second section: 15 + 15 = 30 would exceed, but limit check is BEFORE API call
+        # So second section should NOT be called (15 >= 20 is False, but after first
+        # section we have 15 cards which is < 20, so second section runs too)
+        # Actually: after first section, all_cards has 15 cards, 15 < 20 so second runs
+        # After second: 30 cards. For 3 sections we'd stop at 2.
+        # Let's use 3 sections to properly test
+        sections_3 = _make_test_sections() + [
+            Section(
+                id="section-2",
+                heading="第2章",
+                level=1,
+                breadcrumb="正理の海 > 第2章",
+                text="# 第2章\n\n第2章の内容。",
+                page_range="pp.21-30",
+                char_count=15,
+            ),
+        ]
+        mock_api.reset_mock()
+        result, _ = extract_cards(
+            text="Full text.",
+            source_file="test.pdf",
+            config=config,
+            sections=sections_3,
+        )
+
+        # After 2 sections: 30 cards >= 20 limit -> third section skipped
+        assert mock_api.call_count == 2
