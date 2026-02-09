@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -27,6 +28,7 @@ from pdf2anki.cost import CostRecord, CostTracker, estimate_cost
 from pdf2anki.extract import extract_text
 from pdf2anki.quality import QualityReport, run_quality_pipeline
 from pdf2anki.schemas import AnkiCard, ExtractionResult
+from pdf2anki.section import Section
 from pdf2anki.structure import extract_cards
 
 app = typer.Typer(
@@ -91,7 +93,7 @@ def _build_config(
     """Build AppConfig from base config + CLI overrides."""
     base = load_config(config_path)
 
-    overrides: dict = {}
+    overrides: dict[str, Any] = {}
 
     if model is not None:
         overrides["model"] = model
@@ -285,7 +287,7 @@ def _process_file(
 
 def _process_file_batch(
     *,
-    sections: list,
+    sections: list[Section],
     source_file: str,
     config: AppConfig,
     cost_tracker: CostTracker,

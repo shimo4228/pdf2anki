@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 # Markdown heading pattern: # heading, ## heading, ### heading
 _MD_HEADING_RE = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
@@ -328,7 +329,7 @@ def _split_by_jp_headings(
     return sections
 
 
-def extract_page_ranges(page_chunks: list[dict]) -> dict[str, str]:
+def extract_page_ranges(page_chunks: list[dict[str, Any]]) -> dict[str, str]:
     """Extract page ranges from pymupdf4llm page_chunks toc_items.
 
     Args:

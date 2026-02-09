@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from typing import Any
 
 import anthropic
 from pydantic import BaseModel, ValidationError
@@ -468,7 +469,7 @@ def _call_critique_api(
     )
 
 
-def _parse_critique_response(response_text: str) -> list[dict]:
+def _parse_critique_response(response_text: str) -> list[dict[str, Any]]:
     """Parse and validate the LLM critique response JSON."""
     text = response_text.strip()
 
@@ -486,7 +487,7 @@ def _parse_critique_response(response_text: str) -> list[dict]:
         logger.warning("Critique response is not a list")
         return []
 
-    validated: list[dict] = []
+    validated: list[dict[str, Any]] = []
     for review in data:
         if not isinstance(review, dict):
             continue
@@ -556,7 +557,7 @@ def critique_cards(
         logger.warning("Unexpected response block type")
         return list(cards), cost_tracker
 
-    response_text: str = first_block.text  # type: ignore[union-attr]
+    response_text: str = first_block.text
     reviews = _parse_critique_response(response_text)
 
     reviewed_indices: set[int] = set()
