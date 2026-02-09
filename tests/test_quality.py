@@ -1019,6 +1019,32 @@ class TestSimilarityHelpers:
         assert "深層学習" in tokens
 
 
+class TestTokenizeCJK:
+    """Test CJK-aware tokenization."""
+
+    def test_japanese_text_produces_multiple_tokens(self) -> None:
+        """Japanese text without spaces should produce character-level tokens."""
+        tokens = _tokenize("活性化関数の役割")
+        assert len(tokens) > 1
+
+    def test_mixed_japanese_english(self) -> None:
+        """Mixed JP/EN text should tokenize both parts."""
+        tokens = _tokenize("ReLU活性化関数")
+        assert any("ReLU" in t for t in tokens)
+        assert len(tokens) >= 2
+
+    def test_chinese_text_produces_tokens(self) -> None:
+        """Chinese text should also be properly tokenized."""
+        tokens = _tokenize("神经网络的激活函数")
+        assert len(tokens) > 1
+
+    def test_english_only_unchanged(self) -> None:
+        """Pure English tokenization should still work as before."""
+        tokens = _tokenize("neural network activation function")
+        assert "neural" in tokens
+        assert "network" in tokens
+
+
 class TestCardsSimilarAdditionalBranches:
     """Cover remaining similarity detection branches."""
 

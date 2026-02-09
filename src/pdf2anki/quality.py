@@ -43,6 +43,9 @@ _SENTENCE_SPLIT_RE = re.compile(r"[。．.！!]\s*")
 _MULTI_CONCEPT_RE = re.compile(
     r"(?:また[、,]|さらに|加えて|そして|および|ならびに)",
 )
+_CJK_RE = re.compile(
+    r"[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]"
+)
 
 # Thresholds for scoring
 _MIN_FRONT_LENGTH = 10
@@ -320,13 +323,23 @@ def _char_bigrams(text: str) -> set[str]:
 
 
 def _tokenize(text: str) -> set[str]:
-    """Simple tokenization for similarity comparison.
+    """Tokenize text for similarity comparison.
 
-    Splits on whitespace and common punctuation for both
-    Japanese and English text.
+    For space-delimited text (English), splits on whitespace/punctuation.
+    For CJK text (Japanese/Chinese/Korean), extracts character bigrams
+    since word boundaries are not marked by spaces.
     """
+    # Whitespace/punctuation split for non-CJK segments
     tokens = re.split(r"[\s　、。？?！!,.\-:：]+", text)
-    return {t for t in tokens if len(t) >= 2}
+    result = {t for t in tokens if len(t) >= 2}
+
+    # CJK character bigrams for Japanese/Chinese/Korean segments
+    cjk_chars = _CJK_RE.findall(text)
+    if len(cjk_chars) >= 2:
+        for i in range(len(cjk_chars) - 1):
+            result.add(cjk_chars[i] + cjk_chars[i + 1])
+
+    return result
 
 
 def _jaccard(a: set[str], b: set[str]) -> float:
