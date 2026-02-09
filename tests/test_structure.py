@@ -2,7 +2,7 @@
 
 Tests cover:
 - extract_cards(): Main extraction function (with mocked Claude API)
-- _parse_cards_response(): Response parsing to AnkiCard list
+- parse_cards_response(): Response parsing to AnkiCard list
 - Retry logic on API errors
 - Budget enforcement (stop if budget exceeded)
 - Multi-chunk processing
@@ -22,8 +22,8 @@ from pdf2anki.cost import CostRecord, CostTracker
 from pdf2anki.schemas import AnkiCard, BloomLevel, CardType, ExtractionResult
 from pdf2anki.section import Section
 from pdf2anki.structure import (
-    _parse_cards_response,
     extract_cards,
+    parse_cards_response,
 )
 
 # ============================================================
@@ -73,7 +73,7 @@ def _make_mock_response(
 
 
 # ============================================================
-# _parse_cards_response Tests
+# parse_cards_response Tests
 # ============================================================
 
 
@@ -81,7 +81,7 @@ class TestParseCardsResponse:
     """Test response parsing from JSON to AnkiCard list."""
 
     def test_parse_valid_json_array(self) -> None:
-        cards = _parse_cards_response(SAMPLE_CARDS_JSON)
+        cards = parse_cards_response(SAMPLE_CARDS_JSON)
         assert len(cards) == 2
         assert isinstance(cards[0], AnkiCard)
         assert cards[0].card_type == CardType.QA
@@ -97,20 +97,20 @@ class TestParseCardsResponse:
             "related_concepts": [],
             "mnemonic_hint": None,
         }])
-        cards = _parse_cards_response(single)
+        cards = parse_cards_response(single)
         assert len(cards) == 1
 
     def test_parse_empty_array(self) -> None:
-        cards = _parse_cards_response("[]")
+        cards = parse_cards_response("[]")
         assert cards == []
 
     def test_parse_invalid_json_raises(self) -> None:
         with pytest.raises(ValueError, match="parse"):
-            _parse_cards_response("not valid json{{{")
+            parse_cards_response("not valid json{{{")
 
     def test_parse_non_array_raises(self) -> None:
         with pytest.raises(ValueError, match="array"):
-            _parse_cards_response('{"front": "q", "back": "a"}')
+            parse_cards_response('{"front": "q", "back": "a"}')
 
     def test_parse_skips_invalid_cards(self) -> None:
         """Cards with validation errors should be skipped, not crash."""
@@ -134,17 +134,17 @@ class TestParseCardsResponse:
                 "mnemonic_hint": None,
             },
         ])
-        cards = _parse_cards_response(mixed)
+        cards = parse_cards_response(mixed)
         assert len(cards) == 1  # Only the valid card
 
     def test_parse_extracts_json_from_markdown(self) -> None:
         """LLM may wrap JSON in ```json blocks."""
         wrapped = '```json\n' + SAMPLE_CARDS_JSON + '\n```'
-        cards = _parse_cards_response(wrapped)
+        cards = parse_cards_response(wrapped)
         assert len(cards) == 2
 
     def test_parse_preserves_all_fields(self) -> None:
-        cards = _parse_cards_response(SAMPLE_CARDS_JSON)
+        cards = parse_cards_response(SAMPLE_CARDS_JSON)
         card = cards[0]
         assert card.front == "What is a neural network?"
         assert card.bloom_level == BloomLevel.UNDERSTAND
@@ -160,7 +160,7 @@ class TestParseCardsResponse:
             "bloom_level": "remember",
             "tags": ["t"],
         }])
-        cards = _parse_cards_response(minimal)
+        cards = parse_cards_response(minimal)
         assert len(cards) == 1
         assert cards[0].related_concepts == []
         assert cards[0].mnemonic_hint is None

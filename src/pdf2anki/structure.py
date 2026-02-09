@@ -38,7 +38,7 @@ _RETRYABLE_ERRORS = (
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
 
 
-def _parse_cards_response(response_text: str) -> list[AnkiCard]:
+def parse_cards_response(response_text: str) -> list[AnkiCard]:
     """Parse LLM response text into a list of AnkiCard objects.
 
     Handles:
@@ -234,7 +234,7 @@ def extract_cards(
             continue
 
         response_text = first_block.text
-        cards = _parse_cards_response(response_text)
+        cards = parse_cards_response(response_text)
         all_cards.extend(cards)
 
         cost = estimate_cost(
@@ -349,7 +349,7 @@ def _extract_cards_from_sections(
             continue
 
         response_text = first_block.text
-        cards = _parse_cards_response(response_text)
+        cards = parse_cards_response(response_text)
         all_cards.extend(cards)
 
         cost = estimate_cost(

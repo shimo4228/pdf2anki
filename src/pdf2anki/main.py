@@ -15,12 +15,18 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from pdf2anki.batch import (
+    collect_batch_results,
+    create_batch_requests,
+    poll_batch,
+    submit_batch,
+)
 from pdf2anki.config import AppConfig, load_config
 from pdf2anki.convert import write_json, write_tsv
-from pdf2anki.cost import CostTracker
+from pdf2anki.cost import CostRecord, CostTracker, estimate_cost
 from pdf2anki.extract import extract_text
 from pdf2anki.quality import QualityReport, run_quality_pipeline
-from pdf2anki.schemas import ExtractionResult
+from pdf2anki.schemas import AnkiCard, ExtractionResult
 from pdf2anki.structure import extract_cards
 
 app = typer.Typer(
@@ -221,6 +227,7 @@ def _process_file(
     quality: QualityLevel,
     focus_topics: list[str] | None,
     additional_tags: list[str] | None,
+    batch: bool = False,
 ) -> tuple[ExtractionResult, QualityReport | None, CostTracker]:
     """Process a single file: extract -> generate cards -> quality check."""
     doc = extract_text(
@@ -234,17 +241,29 @@ def _process_file(
     # Use sections when available (structure-aware path)
     sections_list = list(doc.sections) if doc.sections else None
 
-    result, cost_tracker = extract_cards(
-        doc.text,
-        source_file=str(file_path.name),
-        config=config,
-        cost_tracker=cost_tracker,
-        chunks=list(doc.chunks) if len(doc.chunks) > 1 else None,
-        sections=sections_list,
-        focus_topics=focus_topics,
-        bloom_filter=bloom_filter,
-        additional_tags=additional_tags,
-    )
+    # Batch API path: sections available + --batch flag
+    if batch and sections_list:
+        result, cost_tracker = _process_file_batch(
+            sections=sections_list,
+            source_file=str(file_path.name),
+            config=config,
+            cost_tracker=cost_tracker,
+            focus_topics=focus_topics,
+            bloom_filter=bloom_filter,
+            additional_tags=additional_tags,
+        )
+    else:
+        result, cost_tracker = extract_cards(
+            doc.text,
+            source_file=str(file_path.name),
+            config=config,
+            cost_tracker=cost_tracker,
+            chunks=list(doc.chunks) if len(doc.chunks) > 1 else None,
+            sections=sections_list,
+            focus_topics=focus_topics,
+            bloom_filter=bloom_filter,
+            additional_tags=additional_tags,
+        )
 
     quality_report: QualityReport | None = None
 
@@ -262,6 +281,74 @@ def _process_file(
         )
 
     return result, quality_report, cost_tracker
+
+
+def _process_file_batch(
+    *,
+    sections: list,
+    source_file: str,
+    config: AppConfig,
+    cost_tracker: CostTracker,
+    focus_topics: list[str] | None,
+    bloom_filter: list[str] | None,
+    additional_tags: list[str] | None,
+) -> tuple[ExtractionResult, CostTracker]:
+    """Process sections via Batch API (50% cost savings)."""
+    requests = create_batch_requests(
+        sections,
+        document_title=source_file,
+        config=config,
+        focus_topics=focus_topics,
+        bloom_filter=bloom_filter,
+        additional_tags=additional_tags,
+    )
+
+    if not requests:
+        return ExtractionResult(
+            source_file=source_file,
+            cards=[],
+            model_used=config.model,
+        ), cost_tracker
+
+    batch_id = submit_batch(requests)
+    console.print(f"[dim]Batch submitted: {batch_id}[/dim]")
+
+    poll_batch(
+        batch_id,
+        poll_interval=config.batch_poll_interval,
+        timeout=config.batch_timeout,
+    )
+
+    batch_results = collect_batch_results(batch_id)
+
+    all_cards: list[AnkiCard] = []
+    model_used = ""
+    for br in batch_results:
+        all_cards.extend(br.cards)
+        if not model_used:
+            model_used = br.model
+
+        cost = estimate_cost(
+            model=br.model,
+            input_tokens=br.input_tokens,
+            output_tokens=br.output_tokens,
+            batch=True,
+        )
+        record = CostRecord(
+            model=br.model,
+            input_tokens=br.input_tokens,
+            output_tokens=br.output_tokens,
+            cost_usd=cost,
+        )
+        cost_tracker = cost_tracker.add(record)
+
+    result = ExtractionResult(
+        source_file=source_file,
+        cards=all_cards,
+        model_used=model_used or config.model,
+    )
+
+    return result, cost_tracker
 
 
 @app.command()
@@ -313,6 +400,9 @@ def convert(
     ),
     config_path: str | None = typer.Option(
         None, "--config", help="Path to config YAML file"
+    ),
+    batch: bool = typer.Option(
+        False, "--batch", help="Use Batch API for 50% cost savings"
     ),
     verbose: bool = typer.Option(
         False, "--verbose", help="Enable debug logging"
@@ -366,6 +456,7 @@ def convert(
                 quality=quality,
                 focus_topics=focus_topics,
                 additional_tags=additional_tags,
+                batch=batch,
             )
         except (RuntimeError, ValueError) as e:
             console.print(f"[red]Error processing {file_path.name}:[/red] {e}")

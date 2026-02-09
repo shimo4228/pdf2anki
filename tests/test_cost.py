@@ -275,3 +275,65 @@ class TestSelectModel:
         """Should return a full Claude model ID."""
         model = select_model(text_length=1000, card_count=20)
         assert model.startswith("claude-")
+
+
+# ============================================================
+# Batch Pricing Tests (Phase 3)
+# ============================================================
+
+
+class TestBatchPricing:
+    """Test batch pricing at 50% discount."""
+
+    def test_batch_pricing_exists(self) -> None:
+        from pdf2anki.cost import BATCH_PRICING
+
+        assert len(BATCH_PRICING) > 0
+
+    def test_batch_pricing_is_half_of_standard(self) -> None:
+        from pdf2anki.cost import BATCH_PRICING
+
+        for model_id, batch_prices in BATCH_PRICING.items():
+            std_prices = MODEL_PRICING.get(model_id)
+            if std_prices is not None:
+                assert batch_prices["input"] == pytest.approx(
+                    std_prices["input"] * 0.5
+                )
+                assert batch_prices["output"] == pytest.approx(
+                    std_prices["output"] * 0.5
+                )
+
+    def test_estimate_cost_batch_mode(self) -> None:
+        """estimate_cost(batch=True) should use 50% pricing."""
+        standard = estimate_cost(
+            model="claude-sonnet-4-5-20250929",
+            input_tokens=10_000,
+            output_tokens=5_000,
+        )
+        batch = estimate_cost(
+            model="claude-sonnet-4-5-20250929",
+            input_tokens=10_000,
+            output_tokens=5_000,
+            batch=True,
+        )
+        assert batch == pytest.approx(standard * 0.5)
+
+    def test_estimate_cost_batch_default_false(self) -> None:
+        """Default batch=False should use standard pricing."""
+        cost = estimate_cost(
+            model="claude-sonnet-4-5-20250929",
+            input_tokens=1_000_000,
+            output_tokens=0,
+        )
+        assert cost == pytest.approx(3.00)  # $3/1M input tokens
+
+    def test_estimate_cost_batch_unknown_model_fallback(self) -> None:
+        """Unknown model with batch=True should use fallback * 0.5."""
+        cost = estimate_cost(
+            model="unknown-model",
+            input_tokens=1_000_000,
+            output_tokens=0,
+            batch=True,
+        )
+        # Fallback input: $15/1M, batch: $7.50/1M
+        assert cost == pytest.approx(7.50)

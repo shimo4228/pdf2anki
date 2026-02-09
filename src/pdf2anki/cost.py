@@ -20,6 +20,12 @@ MODEL_PRICING: dict[str, dict[str, float]] = {
     MODEL_OPUS: {"input": 15.00, "output": 75.00},
 }
 
+# Batch API pricing (50% of standard)
+BATCH_PRICING: dict[str, dict[str, float]] = {
+    model_id: {"input": p["input"] * 0.5, "output": p["output"] * 0.5}
+    for model_id, p in MODEL_PRICING.items()
+}
+
 # Fallback pricing (most expensive to avoid underestimation)
 _FALLBACK_PRICING = {"input": 15.00, "output": 75.00}
 
@@ -77,18 +83,30 @@ class CostTracker:
         )
 
 
-def estimate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
+def estimate_cost(
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    *,
+    batch: bool = False,
+) -> float:
     """Estimate the cost of an API call in USD.
 
     Args:
         model: Claude model ID.
         input_tokens: Number of input tokens.
         output_tokens: Number of output tokens.
+        batch: If True, use batch pricing (50% of standard).
 
     Returns:
         Estimated cost in USD.
     """
-    pricing = MODEL_PRICING.get(model, _FALLBACK_PRICING)
+    if batch:
+        fallback = {"input": _FALLBACK_PRICING["input"] * 0.5,
+                     "output": _FALLBACK_PRICING["output"] * 0.5}
+        pricing = BATCH_PRICING.get(model, fallback)
+    else:
+        pricing = MODEL_PRICING.get(model, _FALLBACK_PRICING)
     input_cost = (input_tokens / 1_000_000) * pricing["input"]
     output_cost = (output_tokens / 1_000_000) * pricing["output"]
     return input_cost + output_cost

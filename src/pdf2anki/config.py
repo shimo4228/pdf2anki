@@ -60,6 +60,11 @@ class AppConfig(BaseModel, frozen=True):
     cost_budget_limit: float = Field(default=1.00, ge=0.0)
     cost_warn_at: float = Field(default=0.80, ge=0.0, le=1.0)
 
+    # Batch API
+    batch_enabled: bool = False
+    batch_poll_interval: float = Field(default=30.0, ge=0.0)
+    batch_timeout: float = Field(default=3600.0, ge=0.0)
+
     # OCR
     ocr_enabled: bool = False
     ocr_lang: str = "jpn+eng"

@@ -16,6 +16,7 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
+from pdf2anki.batch import BatchResult
 from pdf2anki.cost import CostTracker
 from pdf2anki.extract import ExtractedDocument
 from pdf2anki.main import _merge_quality_reports, _parse_csv_option
@@ -1074,3 +1075,130 @@ class TestProcessFileSections:
         )
         # No sections passed (None or not present)
         assert passed_sections is None
+
+
+# ============================================================
+# --batch CLI flag (Phase 3)
+# ============================================================
+
+
+class TestBatchFlag:
+    """Test --batch flag for batch API processing."""
+
+    @patch("pdf2anki.main.collect_batch_results")
+    @patch("pdf2anki.main.poll_batch")
+    @patch("pdf2anki.main.submit_batch")
+    @patch("pdf2anki.main.create_batch_requests")
+    @patch("pdf2anki.main.extract_text")
+    def test_batch_flag_uses_batch_pipeline(
+        self,
+        mock_extract_text,
+        mock_create_requests,
+        mock_submit,
+        mock_poll,
+        mock_collect,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_cards: list[AnkiCard],
+    ):
+        """--batch flag should use batch API pipeline instead of standard."""
+        sections = (
+            Section(
+                id="section-0",
+                heading="テスト",
+                level=1,
+                breadcrumb="テスト",
+                text="# テスト\n\n本文。",
+                page_range="",
+                char_count=12,
+            ),
+        )
+        doc = ExtractedDocument(
+            source_path="test.txt",
+            text="# テスト\n\n本文。",
+            chunks=("# テスト\n\n本文。",),
+            file_type="txt",
+            used_ocr=False,
+            sections=sections,
+        )
+        mock_extract_text.return_value = doc
+        from pdf2anki.batch import BatchRequest
+
+        mock_create_requests.return_value = [
+            BatchRequest(
+                custom_id="section-0",
+                model="claude-haiku-4-5-20251001",
+                user_prompt="test",
+                system_prompt="system",
+                max_tokens=8192,
+            ),
+        ]
+        mock_submit.return_value = "msgbatch_123"
+        mock_poll.return_value = None
+        mock_collect.return_value = [
+            BatchResult(
+                custom_id="section-0",
+                cards=mock_cards,
+                input_tokens=500,
+                output_tokens=300,
+                model="claude-haiku-4-5-20251001",
+            ),
+        ]
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--batch",
+                "--quality",
+                "off",
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_create_requests.assert_called_once()
+        mock_submit.assert_called_once()
+        mock_poll.assert_called_once()
+        mock_collect.assert_called_once()
+
+    @patch("pdf2anki.main.extract_cards")
+    @patch("pdf2anki.main.extract_text")
+    def test_batch_without_sections_falls_back(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extracted_doc: ExtractedDocument,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """--batch without sections should fall back to standard processing."""
+        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--batch",
+                "--quality",
+                "off",
+            ],
+        )
+
+        assert result.exit_code == 0
+        # Falls back to standard extract_cards
+        mock_extract_cards.assert_called_once()

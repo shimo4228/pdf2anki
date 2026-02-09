@@ -171,3 +171,53 @@ model: "claude-haiku-4-5-20251001"
 
         with pytest.raises(ValueError, match="Invalid YAML"):
             load_config(config_path=str(config_file))
+
+
+# ============================================================
+# Batch Config Tests (Phase 3)
+# ============================================================
+
+
+class TestBatchConfig:
+    """Test batch-related configuration fields."""
+
+    def test_batch_defaults(self) -> None:
+        config = AppConfig()
+        assert config.batch_enabled is False
+        assert config.batch_poll_interval == 30.0
+        assert config.batch_timeout == 3600.0
+
+    def test_batch_enabled_override(self) -> None:
+        config = AppConfig(batch_enabled=True)
+        assert config.batch_enabled is True
+
+    def test_batch_custom_poll_interval(self) -> None:
+        config = AppConfig(batch_poll_interval=10.0)
+        assert config.batch_poll_interval == 10.0
+
+    def test_batch_custom_timeout(self) -> None:
+        config = AppConfig(batch_timeout=7200.0)
+        assert config.batch_timeout == 7200.0
+
+    def test_batch_from_yaml(self, tmp_path: Path) -> None:
+        yaml_content = """
+batch:
+  enabled: true
+  poll_interval: 15.0
+  timeout: 1800.0
+"""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml_content)
+
+        config = load_config(config_path=str(config_file))
+        assert config.batch_enabled is True
+        assert config.batch_poll_interval == 15.0
+        assert config.batch_timeout == 1800.0
+
+    def test_batch_invalid_poll_interval(self) -> None:
+        with pytest.raises(ValidationError):
+            AppConfig(batch_poll_interval=-1.0)
+
+    def test_batch_invalid_timeout(self) -> None:
+        with pytest.raises(ValidationError):
+            AppConfig(batch_timeout=-1.0)
