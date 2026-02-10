@@ -19,7 +19,6 @@ from pdf2anki.cache import (
 from pdf2anki.extract import ExtractedDocument
 from pdf2anki.section import Section
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pymupdf4llm  # type: ignore[import-untyped]
 
+from pdf2anki.image import ExtractedImage
 from pdf2anki.section import Section, split_by_headings
 
 # Approximate token limit for a single chunk (150K tokens ≈ 600K chars)
@@ -41,6 +42,7 @@ class ExtractedDocument:
     file_type: str
     used_ocr: bool
     sections: tuple[Section, ...] = ()
+    images: tuple[ExtractedImage, ...] = ()
 
 
 def preprocess_text(raw: str) -> str:

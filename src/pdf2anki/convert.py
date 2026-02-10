@@ -19,6 +19,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+from pdf2anki.image import ExtractedImage
 from pdf2anki.schemas import AnkiCard, CardType, ExtractionResult
 
 _SCHEMA_VERSION = "1.0"
@@ -154,3 +155,35 @@ def write_json(
     path.parent.mkdir(parents=True, exist_ok=True)
     content = cards_to_json(result)
     path.write_text(content, encoding="utf-8")
+
+
+def write_media(
+    images: list[ExtractedImage],
+    output_dir: Path,
+) -> list[str]:
+    """Write extracted images to a media directory.
+
+    Creates ``_media/`` subdirectory under *output_dir*.  Each image is
+    saved as ``page{N}_img{I}.png`` and the list of filenames is
+    returned so callers can populate :pyattr:`AnkiCard.media`.
+
+    Args:
+        images: Extracted images with non-empty ``image_bytes``.
+        output_dir: Base output directory.
+
+    Returns:
+        List of written filenames (relative to ``_media/``).
+    """
+    media_dir = output_dir / "_media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+
+    filenames: list[str] = []
+    for img in images:
+        if not img.image_bytes:
+            continue
+        ext = "png" if "png" in img.media_type else "jpg"
+        name = f"page{img.page_num}_img{img.index}.{ext}"
+        (media_dir / name).write_bytes(img.image_bytes)
+        filenames.append(name)
+
+    return filenames

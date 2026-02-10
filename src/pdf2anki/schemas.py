@@ -57,6 +57,7 @@ class AnkiCard(BaseModel, frozen=True):
     tags: list[str] = Field(min_length=1)
     related_concepts: list[str] = Field(default_factory=list)
     mnemonic_hint: str | None = Field(default=None)
+    media: list[str] = Field(default_factory=list)
 
 
 # Weights for confidence scoring (from plan)

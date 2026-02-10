@@ -18,13 +18,15 @@ from pdf2anki.batch import (
 )
 from pdf2anki.cache import CacheEntry, compute_file_hash, read_cache, write_cache
 from pdf2anki.config import AppConfig
-from pdf2anki.convert import write_json, write_tsv
+from pdf2anki.convert import write_json, write_media, write_tsv
 from pdf2anki.cost import CostRecord, CostTracker, estimate_cost
 from pdf2anki.extract import ExtractedDocument, extract_text
+from pdf2anki.image import ExtractedImage, extract_page_images
 from pdf2anki.quality import QualityReport, run_quality_pipeline
 from pdf2anki.schemas import AnkiCard, ExtractionResult
 from pdf2anki.section import Section
 from pdf2anki.structure import extract_cards
+from pdf2anki.vision import extract_cards_with_vision
 
 logger = logging.getLogger(__name__)
 
@@ -193,18 +195,29 @@ def process_file(
     focus_topics: list[str] | None,
     additional_tags: list[str] | None,
     batch: bool = False,
+    output_dir: Path | None = None,
 ) -> tuple[ExtractionResult, QualityReport | None, CostTracker]:
     """Process a single file: extract -> generate cards -> quality check.
 
     Args:
         quality: Quality level string ("off", "basic", "full").
+        output_dir: Output directory for media files (vision mode).
     """
     doc = extract_with_cache(file_path, config=config)
 
     bloom_filter = config.cards_bloom_filter or None
     sections_list = list(doc.sections) if doc.sections else None
 
-    if batch and sections_list:
+    # Vision path: extract images and use Vision API
+    if config.vision_enabled and file_path.suffix.lower() == ".pdf":
+        result, cost_tracker = _process_file_vision(
+            file_path=file_path,
+            doc=doc,
+            config=config,
+            cost_tracker=cost_tracker,
+            output_dir=output_dir,
+        )
+    elif batch and sections_list:
         result, cost_tracker = _process_file_batch(
             sections=sections_list,
             source_file=str(file_path.name),
@@ -243,6 +256,59 @@ def process_file(
         )
 
     return result, quality_report, cost_tracker
+
+
+def _process_file_vision(
+    *,
+    file_path: Path,
+    doc: ExtractedDocument,
+    config: AppConfig,
+    cost_tracker: CostTracker,
+    output_dir: Path | None = None,
+) -> tuple[ExtractionResult, CostTracker]:
+    """Process a PDF using Vision API for image-heavy pages.
+
+    Extracts images from the PDF, sends them with text to
+    Claude Vision API, and optionally writes media files.
+    """
+    import pymupdf  # type: ignore[import-untyped]
+
+    pdf_doc = pymupdf.Document(str(file_path))
+    try:
+        page_infos = extract_page_images(
+            pdf_doc,
+            coverage_threshold=config.vision_coverage_threshold,
+            max_images_per_page=config.vision_max_images_per_page,
+        )
+    finally:
+        pdf_doc.close()
+
+    # Flatten all images
+    all_images: list[ExtractedImage] = []
+    for info in page_infos:
+        all_images.extend(info.images)
+
+    logger.info(
+        "Vision: detected %d image(s) on %d page(s)",
+        len(all_images),
+        len(page_infos),
+    )
+
+    # Write media files if output directory is provided
+    if output_dir and all_images:
+        written = write_media(all_images, output_dir)
+        logger.info("Vision: wrote %d media file(s)", len(written))
+
+    # Call Vision API
+    result, cost_tracker = extract_cards_with_vision(
+        text=doc.text,
+        images=all_images,
+        source_file=str(file_path.name),
+        config=config,
+        cost_tracker=cost_tracker,
+    )
+
+    return result, cost_tracker
 
 
 def _process_file_batch(

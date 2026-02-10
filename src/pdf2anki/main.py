@@ -64,6 +64,7 @@ def _build_config(
     lang: str | None,
     quality: QualityLevel,
     cache: bool | None,
+    vision: bool | None = None,
 ) -> AppConfig:
     """Build AppConfig from base config + CLI overrides."""
     base = load_config(config_path)
@@ -87,6 +88,8 @@ def _build_config(
         overrides["ocr_lang"] = lang
     if cache is not None:
         overrides["cache_enabled"] = cache
+    if vision is not None:
+        overrides["vision_enabled"] = vision
 
     if quality == QualityLevel.OFF:
         overrides["quality_enable_critique"] = False
@@ -193,6 +196,11 @@ def convert(
     cache_clear: bool = typer.Option(
         False, "--cache-clear", help="Clear extraction cache before processing"
     ),
+    vision: bool | None = typer.Option(
+        None,
+        "--vision/--no-vision",
+        help="Enable/disable Vision API for image-heavy PDFs",
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", help="Enable debug logging"
     ),
@@ -214,6 +222,7 @@ def convert(
             lang=lang,
             quality=quality,
             cache=cache,
+            vision=vision,
         )
     except FileNotFoundError as e:
         console.print(f"[red]Error:[/red] {e}")
@@ -253,6 +262,7 @@ def convert(
                 focus_topics=focus_topics,
                 additional_tags=additional_tags,
                 batch=batch,
+                output_dir=output_path if output_path.is_dir() else output_path.parent,
             )
         except (RuntimeError, ValueError) as e:
             console.print(f"[red]Error processing {file_path.name}:[/red] {e}")

@@ -521,7 +521,8 @@ class TestCritiqueCards:
         mock_message.model = "claude-sonnet-4-5-20250929"
         mock_message.usage = MagicMock(input_tokens=500, output_tokens=200)
 
-        with patch("pdf2anki.quality.critique._call_critique_api", return_value=mock_message):
+        critique_path = "pdf2anki.quality.critique._call_critique_api"
+        with patch(critique_path, return_value=mock_message):
             result_cards, tracker = critique_cards(
                 cards=[low_quality_card],
                 source_text="機械学習の概要テスト",
@@ -555,7 +556,8 @@ class TestCritiqueCards:
         mock_message.model = "claude-sonnet-4-5-20250929"
         mock_message.usage = MagicMock(input_tokens=300, output_tokens=100)
 
-        with patch("pdf2anki.quality.critique._call_critique_api", return_value=mock_message):
+        critique_path = "pdf2anki.quality.critique._call_critique_api"
+        with patch(critique_path, return_value=mock_message):
             result_cards, _ = critique_cards(
                 cards=[card],
                 source_text="テスト",
@@ -603,7 +605,8 @@ class TestCritiqueCards:
         mock_message.model = "claude-sonnet-4-5-20250929"
         mock_message.usage = MagicMock(input_tokens=400, output_tokens=300)
 
-        with patch("pdf2anki.quality.critique._call_critique_api", return_value=mock_message):
+        critique_path = "pdf2anki.quality.critique._call_critique_api"
+        with patch(critique_path, return_value=mock_message):
             result_cards, _ = critique_cards(
                 cards=[card],
                 source_text="CNN RNN テスト",
@@ -1223,7 +1226,8 @@ class TestCritiqueCardsEdgeCases:
         mock_message.model = "claude-sonnet-4-5-20250929"
         mock_message.usage = MagicMock(input_tokens=100, output_tokens=0)
 
-        with patch("pdf2anki.quality.critique._call_critique_api", return_value=mock_message):
+        critique_path = "pdf2anki.quality.critique._call_critique_api"
+        with patch(critique_path, return_value=mock_message):
             result_cards, _ = critique_cards(
                 cards=[card],
                 source_text="テスト",
@@ -1248,7 +1252,8 @@ class TestCritiqueCardsEdgeCases:
         mock_message.model = "claude-sonnet-4-5-20250929"
         mock_message.usage = MagicMock(input_tokens=200, output_tokens=100)
 
-        with patch("pdf2anki.quality.critique._call_critique_api", return_value=mock_message):
+        critique_path = "pdf2anki.quality.critique._call_critique_api"
+        with patch(critique_path, return_value=mock_message):
             result_cards, _ = critique_cards(
                 cards=[card],
                 source_text="テスト",
@@ -1275,7 +1280,8 @@ class TestCritiqueCardsEdgeCases:
         mock_message.model = "claude-sonnet-4-5-20250929"
         mock_message.usage = MagicMock(input_tokens=200, output_tokens=100)
 
-        with patch("pdf2anki.quality.critique._call_critique_api", return_value=mock_message):
+        critique_path = "pdf2anki.quality.critique._call_critique_api"
+        with patch(critique_path, return_value=mock_message):
             result_cards, _ = critique_cards(
                 cards=[card],
                 source_text="テスト",
@@ -1310,7 +1316,8 @@ class TestCritiqueCardsEdgeCases:
         mock_message.model = "claude-sonnet-4-5-20250929"
         mock_message.usage = MagicMock(input_tokens=200, output_tokens=100)
 
-        with patch("pdf2anki.quality.critique._call_critique_api", return_value=mock_message):
+        critique_path = "pdf2anki.quality.critique._call_critique_api"
+        with patch(critique_path, return_value=mock_message):
             result_cards, _ = critique_cards(
                 cards=cards,
                 source_text="テスト",

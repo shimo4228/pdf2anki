@@ -545,3 +545,70 @@ class TestWriteJson:
         write_json(sample_extraction_result, output_path)
         content = output_path.read_text(encoding="utf-8")
         assert "ニューラルネットワーク" in content
+
+
+# ---------------------------------------------------------------------------
+# write_media
+# ---------------------------------------------------------------------------
+
+
+class TestWriteMedia:
+    """write_media saves extracted images to _media/ directory."""
+
+    def test_writes_png_files(self, tmp_path: Path) -> None:
+        from pdf2anki.convert import write_media
+        from pdf2anki.image import ExtractedImage
+
+        images = [
+            ExtractedImage(
+                page_num=0,
+                index=0,
+                width=100,
+                height=100,
+                bbox=(0.0, 0.0, 100.0, 100.0),
+                image_bytes=b"\x89PNG\r\n\x1a\n",
+                media_type="image/png",
+                coverage=0.3,
+            ),
+            ExtractedImage(
+                page_num=1,
+                index=0,
+                width=200,
+                height=200,
+                bbox=(0.0, 0.0, 200.0, 200.0),
+                image_bytes=b"\xff\xd8\xff\xe0",
+                media_type="image/jpeg",
+                coverage=0.5,
+            ),
+        ]
+        filenames = write_media(images, tmp_path)
+        assert len(filenames) == 2
+        assert filenames[0] == "page0_img0.png"
+        assert filenames[1] == "page1_img0.jpg"
+        assert (tmp_path / "_media" / "page0_img0.png").exists()
+        assert (tmp_path / "_media" / "page1_img0.jpg").exists()
+
+    def test_skips_empty_bytes(self, tmp_path: Path) -> None:
+        from pdf2anki.convert import write_media
+        from pdf2anki.image import ExtractedImage
+
+        images = [
+            ExtractedImage(
+                page_num=0,
+                index=0,
+                width=0,
+                height=0,
+                bbox=(0.0, 0.0, 0.0, 0.0),
+                image_bytes=b"",
+                media_type="image/png",
+                coverage=0.0,
+            ),
+        ]
+        filenames = write_media(images, tmp_path)
+        assert filenames == []
+
+    def test_empty_list(self, tmp_path: Path) -> None:
+        from pdf2anki.convert import write_media
+
+        filenames = write_media([], tmp_path)
+        assert filenames == []

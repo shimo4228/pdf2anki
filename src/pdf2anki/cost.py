@@ -112,6 +112,15 @@ def estimate_cost(
     return input_cost + output_cost
 
 
+def estimate_image_tokens(width: int, height: int) -> int:
+    """Estimate Claude Vision API input tokens for an image.
+
+    Formula: tokens = (width * height) / 750
+    Reference: 1092x1092 ~ 1,590 tokens
+    """
+    return (width * height) // 750
+
+
 def select_model(
     text_length: int,
     card_count: int,

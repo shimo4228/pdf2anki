@@ -73,6 +73,12 @@ class AppConfig(BaseModel, frozen=True):
     cache_enabled: bool = False
     cache_dir: str = ".cache/pdf2anki"
 
+    # Vision
+    vision_enabled: bool = False
+    vision_coverage_threshold: float = Field(default=0.20, ge=0.0, le=1.0)
+    vision_dpi: int = Field(default=150, gt=0)
+    vision_max_images_per_page: int = Field(default=5, gt=0)
+
 
 def _flatten_yaml(data: dict[str, Any], *, _prefix: str = "") -> dict[str, Any]:
     """Flatten nested YAML structure to flat config fields (recursive).

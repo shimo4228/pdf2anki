@@ -469,7 +469,9 @@ class TestExtractWithCache:
         assert doc.text  # extracted something
         assert doc.source_path == str(sample_txt)
 
-    def test_cache_miss_extracts_and_caches(self, sample_txt: Path, tmp_path: Path) -> None:
+    def test_cache_miss_extracts_and_caches(
+        self, sample_txt: Path, tmp_path: Path
+    ) -> None:
         """On cache miss, extract and write cache entry."""
         from pdf2anki.config import AppConfig
         from pdf2anki.service import extract_with_cache
@@ -500,7 +502,9 @@ class TestExtractWithCache:
 
         assert doc2.text == doc1.text
 
-    def test_cache_invalidated_re_extracts(self, sample_txt: Path, tmp_path: Path) -> None:
+    def test_cache_invalidated_re_extracts(
+        self, sample_txt: Path, tmp_path: Path
+    ) -> None:
         """After content change (hash change), re-extract."""
         from pdf2anki.config import AppConfig
         from pdf2anki.service import extract_with_cache
