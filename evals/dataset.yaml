@@ -1,0 +1,149 @@
+name: "pdf2anki-core"
+version: "1.0"
+cases:
+  - id: "buddhism-01"
+    description: "仏教の基本概念: 四諦"
+    text: |
+      四諦とは、仏教の根本教義であり、苦諦・集諦・滅諦・道諦の
+      4つの真理を指す。釈迦が初転法輪で説いたとされる。
+      苦諦は人生が苦であるという真理、集諦は苦の原因が煩悩であるという真理、
+      滅諦は苦の消滅が可能であるという真理、道諦は苦の消滅に至る道があるという真理である。
+    expected_cards:
+      - front_keywords: ["四諦", "何"]
+        back_keywords: ["苦諦", "集諦", "滅諦", "道諦"]
+        card_type: qa
+      - front_keywords: ["四諦", "4つ"]
+        back_keywords: ["苦諦", "集諦", "滅諦", "道諦"]
+        card_type: cloze
+      - front_keywords: ["初転法輪"]
+        back_keywords: ["釈迦", "四諦"]
+
+  - id: "buddhism-02"
+    description: "仏教の基本概念: 八正道"
+    text: |
+      八正道は、苦の消滅に至る実践的な道であり、道諦の具体的な内容である。
+      正見、正思惟、正語、正業、正命、正精進、正念、正定の8つからなる。
+      これらは戒（正語・正業・正命）、定（正精進・正念・正定）、
+      慧（正見・正思惟）の三学に分類される。
+    expected_cards:
+      - front_keywords: ["八正道"]
+        back_keywords: ["正見", "正思惟", "正語"]
+      - front_keywords: ["三学"]
+        back_keywords: ["戒", "定", "慧"]
+
+  - id: "ml-01"
+    description: "機械学習の基本分類"
+    text: |
+      機械学習は大きく3つに分類される：教師あり学習、教師なし学習、
+      強化学習である。教師あり学習はラベル付きデータを使用し、
+      教師なし学習はラベルなしデータからパターンを発見する。
+      強化学習は試行錯誤を通じて最適な行動を学習する手法である。
+    expected_cards:
+      - front_keywords: ["機械学習", "分類"]
+        back_keywords: ["教師あり", "教師なし", "強化"]
+        card_type: cloze
+      - front_keywords: ["教師あり学習"]
+        back_keywords: ["ラベル"]
+      - front_keywords: ["強化学習"]
+        back_keywords: ["試行錯誤", "行動"]
+
+  - id: "ml-02"
+    description: "ニューラルネットワーク基礎"
+    text: |
+      ニューラルネットワークは、人間の脳の神経細胞（ニューロン）を
+      模した計算モデルである。入力層、隠れ層、出力層から構成され、
+      各層間の結合に重みが設定される。学習は勾配降下法による
+      重みの更新で行われ、誤差逆伝播法（バックプロパゲーション）
+      が効率的な勾配計算を可能にする。
+    expected_cards:
+      - front_keywords: ["ニューラルネットワーク", "構成"]
+        back_keywords: ["入力層", "隠れ層", "出力層"]
+      - front_keywords: ["誤差逆伝播", "バックプロパゲーション"]
+        back_keywords: ["勾配", "計算"]
+
+  - id: "philosophy-01"
+    description: "西洋哲学: デカルト"
+    text: |
+      ルネ・デカルトは「我思う、ゆえに我あり（コギト・エルゴ・スム）」
+      で知られるフランスの哲学者・数学者である。方法的懐疑により
+      すべてを疑った結果、疑っている自分の存在だけは疑えないという
+      結論に達した。近代哲学の父と呼ばれる。
+    expected_cards:
+      - front_keywords: ["デカルト"]
+        back_keywords: ["我思う", "コギト"]
+        card_type: qa
+      - front_keywords: ["方法的懐疑"]
+        back_keywords: ["疑", "存在"]
+
+  - id: "statistics-01"
+    description: "基本統計量"
+    text: |
+      代表値には平均値、中央値、最頻値がある。平均値はすべての値の合計を
+      データ数で割ったものである。中央値はデータを大きさ順に並べた時の
+      中央の値である。最頻値は最も頻繁に出現する値である。
+      外れ値の影響を受けにくいのは中央値であり、正規分布では
+      平均値＝中央値＝最頻値となる。
+    expected_cards:
+      - front_keywords: ["代表値"]
+        back_keywords: ["平均値", "中央値", "最頻値"]
+      - front_keywords: ["外れ値", "影響"]
+        back_keywords: ["中央値"]
+      - front_keywords: ["正規分布"]
+        back_keywords: ["平均値", "中央値", "最頻値"]
+
+  - id: "programming-01"
+    description: "オブジェクト指向の原則"
+    text: |
+      オブジェクト指向プログラミングの四大原則は、カプセル化、
+      継承、ポリモーフィズム（多態性）、抽象化である。
+      カプセル化はデータと操作を一つにまとめ外部から隠蔽すること、
+      継承は既存クラスの機能を引き継ぐこと、ポリモーフィズムは
+      同一インターフェースで異なる動作を実現することである。
+    expected_cards:
+      - front_keywords: ["オブジェクト指向", "四大原則"]
+        back_keywords: ["カプセル化", "継承", "ポリモーフィズム", "抽象化"]
+      - front_keywords: ["カプセル化"]
+        back_keywords: ["隠蔽", "データ"]
+      - front_keywords: ["ポリモーフィズム"]
+        back_keywords: ["インターフェース", "動作"]
+
+  - id: "history-01"
+    description: "明治維新"
+    text: |
+      明治維新は、1868年に始まった日本の政治的・社会的変革である。
+      徳川幕府が倒れ、天皇を中心とした新政府が樹立された。
+      廃藩置県により封建制度が廃止され、富国強兵・殖産興業のスローガンの下、
+      近代化が推進された。
+    expected_cards:
+      - front_keywords: ["明治維新", "年"]
+        back_keywords: ["1868"]
+      - front_keywords: ["廃藩置県"]
+        back_keywords: ["封建制度", "廃止"]
+      - front_keywords: ["富国強兵"]
+        back_keywords: ["近代化"]
+
+  - id: "chemistry-01"
+    description: "元素周期表の基本"
+    text: |
+      元素周期表はメンデレーエフが1869年に考案した。
+      元素を原子番号順に並べると、化学的性質が周期的に繰り返す
+      ことを示している。横の行を周期、縦の列を族と呼ぶ。
+      同じ族の元素は類似した化学的性質を持つ。
+    expected_cards:
+      - front_keywords: ["元素周期表", "考案"]
+        back_keywords: ["メンデレーエフ", "1869"]
+      - front_keywords: ["族"]
+        back_keywords: ["類似", "性質"]
+
+  - id: "economics-01"
+    description: "需要と供給"
+    text: |
+      市場経済において、価格は需要と供給の均衡点で決定される。
+      需要曲線は右下がり（価格上昇→需要減少）、
+      供給曲線は右上がり（価格上昇→供給増加）である。
+      両曲線の交点が均衡価格と均衡取引量を示す。
+    expected_cards:
+      - front_keywords: ["均衡価格"]
+        back_keywords: ["需要", "供給", "交点"]
+      - front_keywords: ["需要曲線"]
+        back_keywords: ["右下がり", "価格"]

@@ -1,8 +1,9 @@
 """CLI entry point for pdf2anki.
 
-Provides two subcommands:
+Provides three subcommands:
   - convert: Extract text -> generate cards -> quality check -> output TSV/JSON
   - preview: Dry-run text extraction (no API calls)
+  - eval: Evaluate prompt quality against a labeled dataset
 """
 
 from __future__ import annotations
@@ -343,3 +344,103 @@ def preview(
 
     if len(doc.chunks) > 1:
         console.print(f"\n[dim]({len(doc.chunks)} chunks total)[/dim]")
+
+
+@app.command(name="eval")
+def eval_cmd(
+    dataset: str = typer.Option(
+        ..., "--dataset", help="Path to evaluation dataset YAML"
+    ),
+    output: str | None = typer.Option(
+        None, "-o", "--output", help="JSON report output path"
+    ),
+    model: str | None = typer.Option(
+        None, "--model", help="Claude model name"
+    ),
+    config_path: str | None = typer.Option(
+        None, "--config", help="Path to config YAML file"
+    ),
+    verbose: bool = typer.Option(
+        False, "--verbose", help="Enable debug logging"
+    ),
+) -> None:
+    """Evaluate prompt quality against a labeled dataset."""
+    _log_fmt = "%(name)s %(levelname)s: %(message)s"
+    if verbose:
+        logging.basicConfig(level=logging.DEBUG, format=_log_fmt)
+
+    from pdf2anki.eval.dataset import load_dataset
+    from pdf2anki.eval.matcher import match_cards
+    from pdf2anki.eval.metrics import calculate_metrics
+    from pdf2anki.eval.report import (
+        print_eval_report,
+        write_eval_json,
+    )
+    from pdf2anki.structure import extract_cards
+
+    ds_path = Path(dataset)
+    try:
+        ds = load_dataset(ds_path)
+    except FileNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1) from e
+
+    try:
+        config = _build_config(
+            config_path=config_path,
+            model=model,
+            max_cards=None,
+            card_types=None,
+            bloom_filter=None,
+            budget_limit=None,
+            ocr=False,
+            lang=None,
+            quality=QualityLevel.OFF,
+            cache=False,
+        )
+    except FileNotFoundError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1) from e
+
+    cost_tracker = CostTracker(budget_limit=config.cost_budget_limit)
+    case_results = []
+
+    console.print(
+        f"[bold]Evaluating:[/bold] {ds.name} v{ds.version} "
+        f"({len(ds.cases)} cases)"
+    )
+
+    for case in ds.cases:
+        console.print(f"  Case: [cyan]{case.id}[/cyan] ", end="")
+        try:
+            result, cost_tracker = extract_cards(
+                text=case.text,
+                source_file=f"eval:{case.id}",
+                config=config,
+                cost_tracker=cost_tracker,
+            )
+            cr = match_cards(
+                list(case.expected_cards),
+                list(result.cards),
+                case_id=case.id,
+            )
+            case_results.append(cr)
+            matched = sum(
+                1 for m in cr.matches if m.matched_card is not None
+            )
+            console.print(
+                f"[green]{matched}/{len(case.expected_cards)} matched[/green]"
+            )
+        except (RuntimeError, ValueError) as e:
+            console.print(f"[red]Error: {e}[/red]")
+            continue
+
+    metrics = calculate_metrics(
+        case_results, cost_usd=cost_tracker.total_cost
+    )
+    print_eval_report(metrics, case_results)
+
+    if output is not None:
+        out_path = Path(output)
+        write_eval_json(metrics, case_results, out_path)
+        console.print(f"\n[green]Report saved:[/green] {out_path}")
