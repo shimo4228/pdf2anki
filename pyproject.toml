@@ -1,6 +1,6 @@
 [project]
 name = "pdf2anki"
-version = "0.1.0"
+version = "0.3.0"
 description = "Generate high-quality Anki flashcards from PDF/TXT/MD using Claude AI"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
