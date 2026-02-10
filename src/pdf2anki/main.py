@@ -202,6 +202,9 @@ def convert(
         "--vision/--no-vision",
         help="Enable/disable Vision API for image-heavy PDFs",
     ),
+    review: bool = typer.Option(
+        False, "--review", help="Launch interactive review TUI before saving"
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", help="Enable debug logging"
     ),
@@ -271,6 +274,13 @@ def convert(
 
         if report is not None:
             all_reports.append(report)
+
+        if review and result.cards:
+            from pdf2anki.quality.heuristic import score_cards
+            from pdf2anki.tui import launch_review
+
+            scores = score_cards(list(result.cards))
+            result = launch_review(result, scores)
 
         written = write_output(
             result=result, output_path=output_path, fmt=fmt.value,
