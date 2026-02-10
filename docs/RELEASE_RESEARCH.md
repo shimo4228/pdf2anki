@@ -110,8 +110,8 @@ QA, term definition, summary, cloze, reversible, sequence,
 compare & contrast
 
 ## Quick start
-git clone https://github.com/shimo4228/Anki-QA.git
-cd Anki-QA
+git clone https://github.com/shimo4228/pdf2anki.git
+cd pdf2anki
 uv sync --all-extras
 pdf2anki convert input.pdf
 
@@ -122,7 +122,7 @@ pdf2anki convert input.pdf
 - Cost tracking with budget limits
 - Customizable card types and Bloom level filtering
 
-GitHub: https://github.com/shimo4228/Anki-QA
+GitHub: https://github.com/shimo4228/pdf2anki
 
 Feedback and contributions welcome!
 ```

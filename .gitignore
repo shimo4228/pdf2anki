@@ -32,6 +32,7 @@ output/
 
 # Test / Coverage
 .coverage
+coverage.json
 htmlcov/
 .pytest_cache/
 

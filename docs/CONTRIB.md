@@ -10,8 +10,8 @@
 
 ```bash
 # Clone repository
-git clone https://github.com/shimo4228/Anki-QA.git
-cd Anki-QA
+git clone https://github.com/shimo4228/pdf2anki.git
+cd pdf2anki
 
 # Install all dependencies (including dev + OCR extras)
 uv sync --all-extras

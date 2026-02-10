@@ -17,8 +17,8 @@ A CLI tool that automatically generates high-quality Anki flashcards from PDF, t
 ## Installation
 
 ```bash
-git clone https://github.com/shimo4228/Anki-QA.git
-cd Anki-QA
+git clone https://github.com/shimo4228/pdf2anki.git
+cd pdf2anki
 uv sync --all-extras
 ```
 
