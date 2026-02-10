@@ -10,8 +10,13 @@ PDF/テキスト/Markdown から高品質な Anki フラッシュカードを自
 - **Wozniak の知識定式化 20 原則**: 認知科学に基づくカード生成
 - **8 種類のカードタイプ**: QA, 用語定義, 要約, 穴埋め, 可逆, 順序, 比較対照, 画像穴埋め
 - **Bloom の分類法**: 全カードに認知レベル (remember 〜 create) を付与
+- **画像認識カード生成**: PDF 内の画像を検出・抽出し、Claude Vision API で画像付きカードを生成
+- **インタラクティブレビュー TUI**: エクスポート前にターミナル UI でカードを確認・承認・却下・編集
+- **セクション分割処理**: 見出しベースの文書分割 + パンくずコンテキストで高品質なカード生成
+- **テキスト抽出キャッシュ**: SHA-256 ハッシュで同一ファイルの再抽出をスキップ
+- **Batch API**: 非同期バルク処理で 50% コスト削減
+- **プロンプト評価フレームワーク**: キーワードベースのマッチングで Recall/Precision/F1 を測定
 - **コスト追跡**: セッション単位の API コスト監視、予算上限設定可能
-- **バッチ処理**: ディレクトリ内の全ファイルを一括変換
 - **OCR 対応**: 画像が多い PDF 向けの OCR フォールバック (ocrmypdf)
 
 ## インストール
@@ -55,8 +60,17 @@ pdf2anki convert input.pdf --format both
 # 品質保証パイプライン有効（フル）
 pdf2anki convert input.pdf --quality full
 
-# 品質保証を無効化
-pdf2anki convert input.pdf --quality off
+# インタラクティブレビュー
+pdf2anki convert input.pdf --review
+
+# 画像認識カード生成（Vision API）
+pdf2anki convert input.pdf --vision
+
+# 抽出キャッシュを有効化
+pdf2anki convert input.pdf --cache
+
+# Batch API で 50% コスト削減
+pdf2anki convert input.pdf --batch
 
 # ディレクトリ一括処理
 pdf2anki convert ./docs/
@@ -70,11 +84,8 @@ pdf2anki convert input.pdf --max-cards 20 --budget-limit 0.50
 # OCR 有効化（画像が多い PDF 向け）
 pdf2anki convert input.pdf --ocr --lang jpn+eng
 
-# カスタム設定ファイルを使用
-pdf2anki convert input.pdf --config my-config.yaml
-
-# デバッグログ出力
-pdf2anki convert input.pdf --verbose
+# オプションの組み合わせ
+pdf2anki convert input.pdf --cache --vision --review --quality full --format both
 ```
 
 | オプション | デフォルト | 説明 |
@@ -89,6 +100,10 @@ pdf2anki convert input.pdf --verbose
 | `--card-types` | 全 7 種 | 生成するカードタイプ (カンマ区切り) |
 | `--bloom-filter` | 全て | 含める Bloom レベル (カンマ区切り) |
 | `--budget-limit` | `1.00` | 予算上限 (USD) |
+| `--review` | off | インタラクティブ TUI でカードレビュー |
+| `--vision` | off | 画像認識カード生成を有効化 |
+| `--cache` / `--no-cache` | off | 抽出キャッシュを有効化 |
+| `--batch` | off | Batch API を使用 (50% 割引, 非同期) |
 | `--ocr` | off | OCR を有効化 |
 | `--lang` | `jpn+eng` | OCR 言語 |
 | `--config` | `config.yaml` | 設定 YAML ファイルパス |
@@ -103,24 +118,42 @@ pdf2anki preview input.pdf
 pdf2anki preview input.pdf --ocr
 ```
 
+### eval (評価)
+
+ラベル付きデータセットに対してプロンプト品質を測定。
+
+```bash
+# 評価実行
+pdf2anki eval --dataset evals/dataset.yaml
+
+# JSON レポート出力
+pdf2anki eval --dataset evals/dataset.yaml --output eval-report.json
+```
+
 ## 設定
 
 設定の優先順位: **環境変数 > config.yaml > デフォルト値**
 
-モデル、品質閾値、カードタイプ、コスト制限、OCR 設定など全オプションは [`config.yaml`](config.yaml) を参照。
+モデル、品質閾値、カードタイプ、コスト制限、キャッシュ、画像認識、OCR 設定など全オプションは [`config.yaml`](config.yaml) を参照。
 
 ## アーキテクチャ
 
 ```
 [入力] PDF / TXT / MD
   ↓
-[Step 1] テキスト抽出 (pymupdf4llm + OCR フォールバック)
+[Step 1] テキスト抽出 (pymupdf4llm + OCR フォールバック + キャッシュ)
   ↓
-[Step 2] LLM 構造化抽出 (Claude API Structured Outputs)
+[Step 2] セクション分割 (見出しベース + パンくずコンテキスト)
   ↓
-[Step 3] 品質保証 (6 次元信頼度スコア → LLM 批評)
+[Step 3] LLM 構造化抽出 (Claude API + 画像は Vision API)
   ↓
-[Step 4] 出力 (TSV / JSON)
+[Step 4] 品質保証 (6 次元信頼度スコア → LLM 批評)
+  ↓
+[Step 5] クロスセクション重複検出
+  ↓
+[Step 6] インタラクティブレビュー TUI (オプション)
+  ↓
+[Step 7] 出力 (TSV / JSON)
 ```
 
 ### 品質パイプライン
@@ -131,16 +164,24 @@ pdf2anki preview input.pdf --ocr
 
 ```
 src/pdf2anki/
-  main.py        # CLI (typer): convert, preview コマンド
+  main.py        # CLI (typer): convert, preview, eval コマンド
   config.py      # YAML + 環境変数の設定ローダー
   schemas.py     # Pydantic モデル (AnkiCard, ExtractionResult 等)
   extract.py     # テキスト抽出 (pymupdf4llm + OCR)
+  section.py     # 見出しベースのセクション分割
   structure.py   # LLM 構造化カード抽出
   prompts.py     # Wozniak ベースのプロンプトテンプレート
-  quality.py     # 品質保証パイプライン
+  quality/       # 品質保証パイプライン (ヒューリスティック, 重複検出, 批評)
   convert.py     # TSV/JSON 出力変換
   cost.py        # API コスト追跡
-tests/           # 266 テスト (カバレッジ 80% 以上必須)
+  service.py     # サービス層オーケストレーション
+  cache.py       # SHA-256 抽出キャッシュ
+  image.py       # PDF 画像検出・抽出
+  vision.py      # Claude Vision API 統合
+  batch.py       # Batch API 対応
+  tui/           # インタラクティブカードレビュー (Textual)
+  eval/          # プロンプト評価フレームワーク
+tests/           # 624 テスト, カバレッジ 92%+
 ```
 
 ## 必要環境

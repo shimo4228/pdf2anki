@@ -10,8 +10,13 @@ A CLI tool that automatically generates high-quality Anki flashcards from PDF, t
 - **Wozniak's 20 Rules of Knowledge Formulation**: Card generation based on cognitive science
 - **8 Card Types**: QA, term definition, summary, cloze, reversible, sequence, compare & contrast, image occlusion
 - **Bloom's Taxonomy**: Every card is tagged with a cognitive level (remember through create)
+- **Image-Aware Card Generation**: Detect and extract images from PDFs, generate visual cards via Claude Vision API
+- **Interactive Review TUI**: Review, accept, reject, and edit cards in a terminal UI before export
+- **Section-Aware Processing**: Heading-based document splitting with breadcrumb context for better card quality
+- **Extraction Cache**: SHA-256 content hashing skips redundant extraction on repeated runs
+- **Batch API**: 50% cost reduction for non-urgent bulk processing
+- **Prompt Evaluation Framework**: Keyword-based matching with Recall/Precision/F1 metrics for prompt quality measurement
 - **Cost Tracking**: Per-session API cost monitoring with configurable budget limits
-- **Batch Processing**: Process entire directories of files in a single command
 - **OCR Support**: Optional OCR fallback for image-heavy PDFs (via ocrmypdf)
 
 ## Installation
@@ -55,8 +60,17 @@ pdf2anki convert input.pdf --format both
 # Full quality assurance pipeline
 pdf2anki convert input.pdf --quality full
 
-# Skip quality assurance
-pdf2anki convert input.pdf --quality off
+# Interactive review before export
+pdf2anki convert input.pdf --review
+
+# Enable image-aware card generation (Vision API)
+pdf2anki convert input.pdf --vision
+
+# Use extraction cache for faster repeated runs
+pdf2anki convert input.pdf --cache
+
+# Use Batch API for 50% cost reduction
+pdf2anki convert input.pdf --batch
 
 # Process entire directory
 pdf2anki convert ./docs/
@@ -70,11 +84,8 @@ pdf2anki convert input.pdf --max-cards 20 --budget-limit 0.50
 # Enable OCR for image-heavy PDFs
 pdf2anki convert input.pdf --ocr --lang jpn+eng
 
-# Use custom config file
-pdf2anki convert input.pdf --config my-config.yaml
-
-# Debug logging
-pdf2anki convert input.pdf --verbose
+# Combine options
+pdf2anki convert input.pdf --cache --vision --review --quality full --format both
 ```
 
 | Option | Default | Description |
@@ -89,6 +100,10 @@ pdf2anki convert input.pdf --verbose
 | `--card-types` | all 7 | Card types to generate (comma-separated) |
 | `--bloom-filter` | all | Bloom levels to include (comma-separated) |
 | `--budget-limit` | `1.00` | Budget limit in USD |
+| `--review` | off | Open interactive TUI for card review |
+| `--vision` | off | Enable image-aware card generation |
+| `--cache` / `--no-cache` | off | Enable extraction cache |
+| `--batch` | off | Use Batch API (50% discount, async) |
 | `--ocr` | off | Enable OCR |
 | `--lang` | `jpn+eng` | OCR language |
 | `--config` | `config.yaml` | Path to config YAML |
@@ -103,24 +118,42 @@ pdf2anki preview input.pdf
 pdf2anki preview input.pdf --ocr
 ```
 
+### Eval
+
+Measure prompt quality against a labeled dataset.
+
+```bash
+# Run evaluation
+pdf2anki eval --dataset evals/dataset.yaml
+
+# Output JSON report
+pdf2anki eval --dataset evals/dataset.yaml --output eval-report.json
+```
+
 ## Configuration
 
 Settings are loaded with priority: **env vars > config.yaml > defaults**.
 
-See [`config.yaml`](config.yaml) for all options including model, quality thresholds, card types, cost limits, and OCR settings.
+See [`config.yaml`](config.yaml) for all options including model, quality thresholds, card types, cost limits, cache, vision, and OCR settings.
 
 ## Architecture
 
 ```
 [Input] PDF / TXT / MD
   ↓
-[Step 1] Text Extraction (pymupdf4llm + OCR fallback)
+[Step 1] Text Extraction (pymupdf4llm + OCR fallback + cache)
   ↓
-[Step 2] LLM Structured Extraction (Claude API Structured Outputs)
+[Step 2] Section Splitting (heading-based with breadcrumb context)
   ↓
-[Step 3] Quality Assurance (6-dim Confidence Score → LLM Critique)
+[Step 3] LLM Structured Extraction (Claude API + Vision API for images)
   ↓
-[Step 4] Output (TSV / JSON)
+[Step 4] Quality Assurance (6-dim Confidence Score → LLM Critique)
+  ↓
+[Step 5] Cross-Section Deduplication
+  ↓
+[Step 6] Interactive Review TUI (optional)
+  ↓
+[Step 7] Output (TSV / JSON)
 ```
 
 ### Quality Pipeline
@@ -131,16 +164,24 @@ Cards are scored across 6 dimensions (front quality, back quality, card type fit
 
 ```
 src/pdf2anki/
-  main.py        # CLI (typer): convert, preview commands
+  main.py        # CLI (typer): convert, preview, eval commands
   config.py      # YAML + env var config loader
   schemas.py     # Pydantic models (AnkiCard, ExtractionResult, etc.)
   extract.py     # Text extraction (pymupdf4llm + OCR)
+  section.py     # Heading-based section splitting
   structure.py   # LLM structured card extraction
   prompts.py     # Wozniak-based prompt templates
-  quality.py     # Quality assurance pipeline
+  quality/       # Quality assurance pipeline (heuristic, duplicate, critique)
   convert.py     # TSV/JSON output conversion
   cost.py        # API cost tracking
-tests/           # 266 tests (80%+ coverage required)
+  service.py     # Service layer orchestration
+  cache.py       # SHA-256 extraction cache
+  image.py       # PDF image detection and extraction
+  vision.py      # Claude Vision API integration
+  batch.py       # Batch API support
+  tui/           # Interactive card review (Textual)
+  eval/          # Prompt evaluation framework
+tests/           # 624 tests, 92%+ coverage
 ```
 
 ## Requirements
