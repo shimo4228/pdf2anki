@@ -110,6 +110,7 @@ def _print_summary(
     cost_tracker: CostTracker,
     quality_report: QualityReport | None,
     written_files: list[Path],
+    pushed_count: int = 0,
 ) -> None:
     """Print a rich summary table to console."""
     table = Table(title="pdf2anki Summary", show_header=False)
@@ -127,6 +128,9 @@ def _print_summary(
 
     for f in written_files:
         table.add_row("Output", str(f))
+
+    if pushed_count > 0:
+        table.add_row("Pushed to Anki", str(pushed_count))
 
     console.print(table)
 
@@ -205,6 +209,12 @@ def convert(
     review: bool = typer.Option(
         False, "--review", help="Launch interactive review TUI before saving"
     ),
+    push: bool = typer.Option(
+        False, "--push", help="Push cards to Anki via AnkiConnect"
+    ),
+    deck: str = typer.Option(
+        "pdf2anki", "--deck", help="Anki deck name for --push"
+    ),
     verbose: bool = typer.Option(
         False, "--verbose", help="Enable debug logging"
     ),
@@ -254,6 +264,7 @@ def convert(
     all_written: list[Path] = []
     all_reports: list[QualityReport] = []
     total_cards = 0
+    total_pushed = 0
 
     for file_path in files:
         console.print(f"Processing: [cyan]{file_path.name}[/cyan]")
@@ -289,11 +300,23 @@ def convert(
         all_written.extend(written)
         total_cards += result.card_count
 
+        if push and result.cards:
+            from pdf2anki.anki_connect import push_cards
+
+            push_result = push_cards(list(result.cards), deck_name=deck)
+            total_pushed += push_result.added
+            if push_result.failed > 0:
+                console.print(
+                    f"[yellow]Warning:[/yellow] {push_result.failed} card(s) "
+                    f"failed to push"
+                )
+
     quality_report = merge_quality_reports(all_reports) if all_reports else None
 
     _print_summary(
         card_count=total_cards, cost_tracker=cost_tracker,
         quality_report=quality_report, written_files=all_written,
+        pushed_count=total_pushed,
     )
 
 

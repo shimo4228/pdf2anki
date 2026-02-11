@@ -1204,3 +1204,181 @@ class TestBatchFlag:
         assert result.exit_code == 0
         # Falls back to standard extract_cards
         mock_extract_cards.assert_called_once()
+
+
+# ============================================================
+# --push CLI flag (AnkiConnect integration)
+# ============================================================
+
+
+class TestPushFlag:
+    """Test --push flag for AnkiConnect integration."""
+
+    @patch("pdf2anki.anki_connect.push_cards")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
+    def test_push_calls_push_cards(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        mock_push_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extracted_doc: ExtractedDocument,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """--push calls push_cards with generated cards."""
+        from pdf2anki.anki_connect import PushResult
+
+        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+        mock_push_cards.return_value = PushResult(
+            total=2, added=2, failed=0, errors=()
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--push",
+                "--quality",
+                "off",
+            ],
+        )
+
+        assert result.exit_code == 0
+        mock_push_cards.assert_called_once()
+        call_kwargs = mock_push_cards.call_args
+        assert call_kwargs.kwargs["deck_name"] == "pdf2anki"
+
+    @patch("pdf2anki.anki_connect.push_cards")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
+    def test_push_with_custom_deck(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        mock_push_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extracted_doc: ExtractedDocument,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """--push --deck uses custom deck name."""
+        from pdf2anki.anki_connect import PushResult
+
+        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+        mock_push_cards.return_value = PushResult(
+            total=2, added=2, failed=0, errors=()
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--push",
+                "--deck",
+                "my-deck",
+                "--quality",
+                "off",
+            ],
+        )
+
+        assert result.exit_code == 0
+        call_kwargs = mock_push_cards.call_args
+        assert call_kwargs.kwargs["deck_name"] == "my-deck"
+
+    @patch("pdf2anki.anki_connect.push_cards")
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
+    def test_push_shows_summary(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        mock_push_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extracted_doc: ExtractedDocument,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """--push shows pushed count in summary."""
+        from pdf2anki.anki_connect import PushResult
+
+        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+        mock_push_cards.return_value = PushResult(
+            total=2, added=2, failed=0, errors=()
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--push",
+                "--quality",
+                "off",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Pushed to Anki" in result.output
+
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
+    def test_no_push_by_default(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extracted_doc: ExtractedDocument,
+        mock_extraction_result: ExtractionResult,
+    ):
+        """Without --push, no push_cards call."""
+        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--quality",
+                "off",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Pushed to Anki" not in result.output
