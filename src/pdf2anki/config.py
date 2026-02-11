@@ -19,7 +19,6 @@ _DEFAULT_CARD_TYPES = [
     "qa",
     "term_definition",
     "summary_point",
-    "cloze",
     "reversible",
     "sequence",
     "compare_contrast",

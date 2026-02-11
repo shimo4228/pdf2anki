@@ -50,8 +50,9 @@ class TestAppConfig:
     def test_cards_defaults(self) -> None:
         config = AppConfig()
         assert config.cards_max_cards == 50
-        assert len(config.cards_card_types) == 7
+        assert len(config.cards_card_types) == 6
         assert "qa" in config.cards_card_types
+        assert "cloze" not in config.cards_card_types
         assert "image_occlusion" not in config.cards_card_types
 
     def test_cost_defaults(self) -> None:
@@ -139,10 +140,13 @@ model: "claude-haiku-4-5-20251001"
 
     def test_env_var_overrides(self) -> None:
         """Environment variables should override YAML and defaults."""
-        with patch.dict(os.environ, {
-            "PDF2ANKI_MODEL": "claude-opus-4-6",
-            "PDF2ANKI_BUDGET_LIMIT": "5.00",
-        }):
+        with patch.dict(
+            os.environ,
+            {
+                "PDF2ANKI_MODEL": "claude-opus-4-6",
+                "PDF2ANKI_BUDGET_LIMIT": "5.00",
+            },
+        ):
             config = load_config(config_path=None)
             assert config.model == "claude-opus-4-6"
             assert config.cost_budget_limit == 5.00
