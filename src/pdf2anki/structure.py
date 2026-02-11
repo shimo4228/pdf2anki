@@ -68,9 +68,7 @@ def parse_cards_response(response_text: str) -> list[AnkiCard]:
         raise ValueError(f"Failed to parse LLM response as JSON: {e}") from e
 
     if not isinstance(data, list):
-        raise ValueError(
-            f"Expected a JSON array of cards, got {type(data).__name__}"
-        )
+        raise ValueError(f"Expected a JSON array of cards, got {type(data).__name__}")
 
     cards: list[AnkiCard] = []
     for i, item in enumerate(data):
@@ -150,8 +148,10 @@ def extract_cards(
     Raises:
         RuntimeError: If budget is exceeded or API calls fail after retries.
     """
-    tracker = cost_tracker if cost_tracker is not None else CostTracker(
-        budget_limit=config.cost_budget_limit
+    tracker = (
+        cost_tracker
+        if cost_tracker is not None
+        else CostTracker(budget_limit=config.cost_budget_limit)
     )
 
     if not tracker.is_within_budget:
@@ -210,9 +210,7 @@ def extract_cards(
             additional_tags=additional_tags,
         )
 
-        messages: list[MessageParam] = [
-            {"role": "user", "content": user_prompt}
-        ]
+        messages: list[MessageParam] = [{"role": "user", "content": user_prompt}]
 
         response = _call_with_retry(
             client=client,
@@ -260,6 +258,7 @@ def extract_cards(
 
 
 _SECTION_MAX_CARDS = 20  # Section-level cap (vs document-level 50)
+_SECTION_MIN_CHARS = 50  # Skip sections shorter than this (e.g. bare headings)
 
 
 def _extract_cards_from_sections(
@@ -285,6 +284,15 @@ def _extract_cards_from_sections(
     section_max_cards = min(config.cards_max_cards, _SECTION_MAX_CARDS)
 
     for section in sections:
+        if section.char_count < _SECTION_MIN_CHARS:
+            logger.info(
+                "Skipping short section %s (%d chars < %d minimum)",
+                section.id,
+                section.char_count,
+                _SECTION_MIN_CHARS,
+            )
+            continue
+
         if not tracker.is_within_budget:
             logger.warning("Budget exceeded, stopping section processing")
             break
@@ -324,9 +332,7 @@ def _extract_cards_from_sections(
             additional_tags=additional_tags,
         )
 
-        messages: list[MessageParam] = [
-            {"role": "user", "content": user_prompt}
-        ]
+        messages: list[MessageParam] = [{"role": "user", "content": user_prompt}]
 
         response = _call_with_retry(
             client=client,
@@ -376,18 +382,13 @@ def _extract_cards_from_sections(
     return result, tracker
 
 
-def _inject_section_tag(
-    cards: list[AnkiCard], section_id: str
-) -> list[AnkiCard]:
+def _inject_section_tag(cards: list[AnkiCard], section_id: str) -> list[AnkiCard]:
     """Add a _section:: origin tag to each card for dedup tracking.
 
     Returns new AnkiCard instances (immutable pattern).
     """
     tag = f"_section::{section_id}"
-    return [
-        card.model_copy(update={"tags": [*card.tags, tag]})
-        for card in cards
-    ]
+    return [card.model_copy(update={"tags": [*card.tags, tag]}) for card in cards]
 
 
 def _call_with_retry(
@@ -432,6 +433,4 @@ def _call_with_retry(
             if attempt < _MAX_RETRIES - 1:
                 time.sleep(_RETRY_DELAY_SECONDS * (attempt + 1))
 
-    raise RuntimeError(
-        f"API call failed after {_MAX_RETRIES} retries: {last_error}"
-    )
+    raise RuntimeError(f"API call failed after {_MAX_RETRIES} retries: {last_error}")

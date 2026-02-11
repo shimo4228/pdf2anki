@@ -160,12 +160,16 @@ def sample_pdf(tmp_path: Path) -> Path:
     pdf_path = tmp_path / "sample.pdf"
     doc = pymupdf.Document()
     page = doc.new_page()
-    page.insert_text(
-        (72, 72),
-        "ニューラルネットワークの基礎\n\n活性化関数はReLU、Sigmoid、Tanhがあります。",
-        fontname="japan",
-        fontsize=12,
-    )
+    lines = [
+        "ニューラルネットワークの基礎についての解説文書である。",
+        "活性化関数にはReLU、Sigmoid、Tanhなどがある。",
+        "ReLUは入力が負のとき0を出力し正のときはそのまま出力する。",
+        "Sigmoidは出力を0から1の範囲に収める関数である。",
+    ]
+    y = 72
+    for line in lines:
+        page.insert_text((72, y), line, fontname="japan", fontsize=12)
+        y += 20
     doc.save(str(pdf_path))
     doc.close()
     return pdf_path
@@ -176,12 +180,15 @@ def sample_dir(tmp_path: Path) -> Path:
     d = tmp_path / "docs"
     d.mkdir()
     (d / "a.txt").write_text(
-        "文書A: ニューラルネットワークのテスト用テキスト。\n"
-        "活性化関数とバックプロパゲーション。\n",
+        "文書A: ニューラルネットワークのテスト用テキストである。"
+        "活性化関数にはReLU、Sigmoid、Tanhがあり、それぞれ異なる特性を持つ。"
+        "バックプロパゲーションは誤差逆伝播法とも呼ばれ、勾配を計算する手法である。\n",
         encoding="utf-8",
     )
     (d / "b.md").write_text(
-        "# 文書B\n\n深層学習の基礎。CNNとRNNの違い。\n",
+        "# 文書B\n\n深層学習の基礎について解説する。"
+        "CNNは画像認識に広く使われる畳み込みニューラルネットワークである。"
+        "RNNは時系列データの処理に適した回帰結合を持つニューラルネットワークである。\n",
         encoding="utf-8",
     )
     (d / "ignore.csv").write_text("col1,col2\n1,2", encoding="utf-8")
@@ -391,9 +398,7 @@ class TestE2EPdfToTsv:
         content = output.read_text(encoding="utf-8")
         assert "#separator:tab" in content
         data_lines = [
-            ln
-            for ln in content.strip().split("\n")
-            if not ln.startswith("#")
+            ln for ln in content.strip().split("\n") if not ln.startswith("#")
         ]
         assert len(data_lines) >= 1
 
@@ -776,11 +781,7 @@ class TestE2ETsvFormat:
 
         content = output.read_text(encoding="utf-8")
         # Find the cloze card line (contains {{c1::)
-        cloze_lines = [
-            ln
-            for ln in content.strip().split("\n")
-            if "{{c1::" in ln
-        ]
+        cloze_lines = [ln for ln in content.strip().split("\n") if "{{c1::" in ln]
         assert len(cloze_lines) >= 1
         # Cloze card: front\t\ttags (empty back)
         parts = cloze_lines[0].split("\t")

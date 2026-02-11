@@ -30,29 +30,31 @@ from pdf2anki.structure import (
 # Fixtures
 # ============================================================
 
-SAMPLE_CARDS_JSON = json.dumps([
-    {
-        "front": "What is a neural network?",
-        "back": "A computational model inspired by biological neural networks.",
-        "card_type": "qa",
-        "bloom_level": "understand",
-        "tags": ["AI::basics"],
-        "related_concepts": ["deep learning", "perceptron"],
-        "mnemonic_hint": None,
-    },
-    {
-        "front": (
-            "{{c1::Gradient descent}} is an optimization"
-            " algorithm that minimizes the loss function."
-        ),
-        "back": "",
-        "card_type": "cloze",
-        "bloom_level": "remember",
-        "tags": ["AI::optimization"],
-        "related_concepts": ["learning rate", "SGD"],
-        "mnemonic_hint": "Gradient = slope, Descent = going down",
-    },
-])
+SAMPLE_CARDS_JSON = json.dumps(
+    [
+        {
+            "front": "What is a neural network?",
+            "back": "A computational model inspired by biological neural networks.",
+            "card_type": "qa",
+            "bloom_level": "understand",
+            "tags": ["AI::basics"],
+            "related_concepts": ["deep learning", "perceptron"],
+            "mnemonic_hint": None,
+        },
+        {
+            "front": (
+                "{{c1::Gradient descent}} is an optimization"
+                " algorithm that minimizes the loss function."
+            ),
+            "back": "",
+            "card_type": "cloze",
+            "bloom_level": "remember",
+            "tags": ["AI::optimization"],
+            "related_concepts": ["learning rate", "SGD"],
+            "mnemonic_hint": "Gradient = slope, Descent = going down",
+        },
+    ]
+)
 
 
 def _make_mock_response(
@@ -88,15 +90,19 @@ class TestParseCardsResponse:
         assert cards[1].card_type == CardType.CLOZE
 
     def test_parse_single_card(self) -> None:
-        single = json.dumps([{
-            "front": "What is ML?",
-            "back": "Machine Learning.",
-            "card_type": "qa",
-            "bloom_level": "remember",
-            "tags": ["ML"],
-            "related_concepts": [],
-            "mnemonic_hint": None,
-        }])
+        single = json.dumps(
+            [
+                {
+                    "front": "What is ML?",
+                    "back": "Machine Learning.",
+                    "card_type": "qa",
+                    "bloom_level": "remember",
+                    "tags": ["ML"],
+                    "related_concepts": [],
+                    "mnemonic_hint": None,
+                }
+            ]
+        )
         cards = parse_cards_response(single)
         assert len(cards) == 1
 
@@ -114,32 +120,34 @@ class TestParseCardsResponse:
 
     def test_parse_skips_invalid_cards(self) -> None:
         """Cards with validation errors should be skipped, not crash."""
-        mixed = json.dumps([
-            {
-                "front": "Valid card?",
-                "back": "Yes.",
-                "card_type": "qa",
-                "bloom_level": "remember",
-                "tags": ["test"],
-                "related_concepts": [],
-                "mnemonic_hint": None,
-            },
-            {
-                "front": "",  # Invalid: empty front
-                "back": "answer",
-                "card_type": "qa",
-                "bloom_level": "remember",
-                "tags": ["test"],
-                "related_concepts": [],
-                "mnemonic_hint": None,
-            },
-        ])
+        mixed = json.dumps(
+            [
+                {
+                    "front": "Valid card?",
+                    "back": "Yes.",
+                    "card_type": "qa",
+                    "bloom_level": "remember",
+                    "tags": ["test"],
+                    "related_concepts": [],
+                    "mnemonic_hint": None,
+                },
+                {
+                    "front": "",  # Invalid: empty front
+                    "back": "answer",
+                    "card_type": "qa",
+                    "bloom_level": "remember",
+                    "tags": ["test"],
+                    "related_concepts": [],
+                    "mnemonic_hint": None,
+                },
+            ]
+        )
         cards = parse_cards_response(mixed)
         assert len(cards) == 1  # Only the valid card
 
     def test_parse_extracts_json_from_markdown(self) -> None:
         """LLM may wrap JSON in ```json blocks."""
-        wrapped = '```json\n' + SAMPLE_CARDS_JSON + '\n```'
+        wrapped = "```json\n" + SAMPLE_CARDS_JSON + "\n```"
         cards = parse_cards_response(wrapped)
         assert len(cards) == 2
 
@@ -153,13 +161,17 @@ class TestParseCardsResponse:
 
     def test_parse_handles_missing_optional_fields(self) -> None:
         """Cards missing optional fields should get defaults."""
-        minimal = json.dumps([{
-            "front": "Q?",
-            "back": "A.",
-            "card_type": "qa",
-            "bloom_level": "remember",
-            "tags": ["t"],
-        }])
+        minimal = json.dumps(
+            [
+                {
+                    "front": "Q?",
+                    "back": "A.",
+                    "card_type": "qa",
+                    "bloom_level": "remember",
+                    "tags": ["t"],
+                }
+            ]
+        )
         cards = parse_cards_response(minimal)
         assert len(cards) == 1
         assert cards[0].related_concepts == []
@@ -263,9 +275,7 @@ class TestExtractCards:
     @patch("pdf2anki.structure._call_claude_api")
     def test_api_error_exhausts_retries(self, mock_api: MagicMock) -> None:
         """Should raise after all retries are exhausted."""
-        mock_api.side_effect = anthropic.APIConnectionError(
-            request=MagicMock()
-        )
+        mock_api.side_effect = anthropic.APIConnectionError(request=MagicMock())
 
         config = AppConfig()
         with pytest.raises(RuntimeError, match="API"):
@@ -322,15 +332,19 @@ class TestExtractCards:
     def test_multi_chunk_processing(self, mock_api: MagicMock) -> None:
         """Multiple chunks should each generate a separate API call."""
         mock_api.return_value = _make_mock_response(
-            json.dumps([{
-                "front": "Q?",
-                "back": "A.",
-                "card_type": "qa",
-                "bloom_level": "remember",
-                "tags": ["test"],
-                "related_concepts": [],
-                "mnemonic_hint": None,
-            }])
+            json.dumps(
+                [
+                    {
+                        "front": "Q?",
+                        "back": "A.",
+                        "card_type": "qa",
+                        "bloom_level": "remember",
+                        "tags": ["test"],
+                        "related_concepts": [],
+                        "mnemonic_hint": None,
+                    }
+                ]
+            )
         )
 
         config = AppConfig()
@@ -455,24 +469,26 @@ class TestExtractCards:
 
 def _make_test_sections() -> list[Section]:
     """Create test sections for section-aware extraction tests."""
+    _text_0 = "# 序論\n\n序論の内容。因明の概要について詳しく説明する。仏教論理学の基礎を理解するための導入部分である。"
+    _text_1 = "# 第1章\n\n第1章の内容。論書名の意味について詳しく解説する。因明正理門論の名称に含まれる各語の意味を分析する。"
     return [
         Section(
             id="section-0",
             heading="序論",
             level=1,
             breadcrumb="正理の海 > 序論",
-            text="# 序論\n\n序論の内容。因明の概要。",
+            text=_text_0,
             page_range="pp.1-5",
-            char_count=20,
+            char_count=len(_text_0),
         ),
         Section(
             id="section-1",
             heading="第1章",
             level=1,
             breadcrumb="正理の海 > 第1章",
-            text="# 第1章\n\n第1章の内容。論書名の意味。",
+            text=_text_1,
             page_range="pp.6-20",
-            char_count=22,
+            char_count=len(_text_1),
         ),
     ]
 
@@ -484,15 +500,19 @@ class TestExtractCardsWithSections:
     def test_sections_each_get_api_call(self, mock_api: MagicMock) -> None:
         """Each section should generate a separate API call."""
         mock_api.return_value = _make_mock_response(
-            json.dumps([{
-                "front": "Q?",
-                "back": "A.",
-                "card_type": "qa",
-                "bloom_level": "remember",
-                "tags": ["test"],
-                "related_concepts": [],
-                "mnemonic_hint": None,
-            }])
+            json.dumps(
+                [
+                    {
+                        "front": "Q?",
+                        "back": "A.",
+                        "card_type": "qa",
+                        "bloom_level": "remember",
+                        "tags": ["test"],
+                        "related_concepts": [],
+                        "mnemonic_hint": None,
+                    }
+                ]
+            )
         )
 
         config = AppConfig()
@@ -509,9 +529,7 @@ class TestExtractCardsWithSections:
         assert tracker.request_count == 2
 
     @patch("pdf2anki.structure._call_claude_api")
-    def test_sections_use_build_section_prompt(
-        self, mock_api: MagicMock
-    ) -> None:
+    def test_sections_use_build_section_prompt(self, mock_api: MagicMock) -> None:
         """When sections are provided, build_section_prompt should be used."""
         mock_api.return_value = _make_mock_response("[]")
 
@@ -529,9 +547,7 @@ class TestExtractCardsWithSections:
             assert mock_bsp.call_count == 2
 
     @patch("pdf2anki.structure._call_claude_api")
-    def test_sections_prompt_contains_breadcrumb(
-        self, mock_api: MagicMock
-    ) -> None:
+    def test_sections_prompt_contains_breadcrumb(self, mock_api: MagicMock) -> None:
         """API call should include breadcrumb context from section."""
         mock_api.return_value = _make_mock_response("[]")
 
@@ -551,9 +567,7 @@ class TestExtractCardsWithSections:
         assert "序論" in user_content
 
     @patch("pdf2anki.structure._call_claude_api")
-    def test_sections_model_routing_per_section(
-        self, mock_api: MagicMock
-    ) -> None:
+    def test_sections_model_routing_per_section(self, mock_api: MagicMock) -> None:
         """Model should be selected based on section.char_count, not full text."""
         mock_api.return_value = _make_mock_response("[]")
 
@@ -573,9 +587,7 @@ class TestExtractCardsWithSections:
         assert "haiku" in model_used
 
     @patch("pdf2anki.structure._call_claude_api")
-    def test_sections_budget_stops_mid_processing(
-        self, mock_api: MagicMock
-    ) -> None:
+    def test_sections_budget_stops_mid_processing(self, mock_api: MagicMock) -> None:
         """Budget exceeded mid-section should stop remaining sections."""
         mock_response = MagicMock()
         mock_response.content = [MagicMock(text="[]")]
@@ -598,9 +610,7 @@ class TestExtractCardsWithSections:
         assert mock_api.call_count == 1
 
     @patch("pdf2anki.structure._call_claude_api")
-    def test_sections_none_falls_back_to_chunks(
-        self, mock_api: MagicMock
-    ) -> None:
+    def test_sections_none_falls_back_to_chunks(self, mock_api: MagicMock) -> None:
         """When sections=None, should use existing chunks path."""
         mock_api.return_value = _make_mock_response("[]")
 
@@ -614,9 +624,7 @@ class TestExtractCardsWithSections:
         assert mock_api.call_count == 1
 
     @patch("pdf2anki.structure._call_claude_api")
-    def test_sections_empty_list_falls_back(
-        self, mock_api: MagicMock
-    ) -> None:
+    def test_sections_empty_list_falls_back(self, mock_api: MagicMock) -> None:
         """Empty sections list should fall back to chunks path."""
         mock_api.return_value = _make_mock_response("[]")
 
@@ -631,23 +639,23 @@ class TestExtractCardsWithSections:
         assert mock_api.call_count == 1
 
     @patch("pdf2anki.structure._call_claude_api")
-    def test_sections_stop_at_document_card_limit(
-        self, mock_api: MagicMock
-    ) -> None:
+    def test_sections_stop_at_document_card_limit(self, mock_api: MagicMock) -> None:
         """Should stop processing sections when total cards reach config limit."""
         # Each API call returns 15 cards
-        many_cards = json.dumps([
-            {
-                "front": f"Q{i}?",
-                "back": f"A{i}.",
-                "card_type": "qa",
-                "bloom_level": "remember",
-                "tags": ["test"],
-                "related_concepts": [],
-                "mnemonic_hint": None,
-            }
-            for i in range(15)
-        ])
+        many_cards = json.dumps(
+            [
+                {
+                    "front": f"Q{i}?",
+                    "back": f"A{i}.",
+                    "card_type": "qa",
+                    "bloom_level": "remember",
+                    "tags": ["test"],
+                    "related_concepts": [],
+                    "mnemonic_hint": None,
+                }
+                for i in range(15)
+            ]
+        )
         mock_api.return_value = _make_mock_response(many_cards)
 
         # Config limit: 20 cards total
@@ -693,15 +701,19 @@ class TestExtractCardsWithSections:
     def test_sections_inject_origin_tags(self, mock_api: MagicMock) -> None:
         """Cards from section-aware extraction should have _section:: tags."""
         mock_api.return_value = _make_mock_response(
-            json.dumps([{
-                "front": "Q?",
-                "back": "A.",
-                "card_type": "qa",
-                "bloom_level": "remember",
-                "tags": ["test"],
-                "related_concepts": [],
-                "mnemonic_hint": None,
-            }])
+            json.dumps(
+                [
+                    {
+                        "front": "Q?",
+                        "back": "A.",
+                        "card_type": "qa",
+                        "bloom_level": "remember",
+                        "tags": ["test"],
+                        "related_concepts": [],
+                        "mnemonic_hint": None,
+                    }
+                ]
+            )
         )
 
         config = AppConfig()
@@ -717,3 +729,83 @@ class TestExtractCardsWithSections:
         for card in result.cards:
             section_tags = [t for t in card.tags if t.startswith("_section::")]
             assert len(section_tags) == 1, f"Expected _section:: tag in {card.tags}"
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_skip_short_sections(self, mock_api: MagicMock) -> None:
+        """Sections shorter than _SECTION_MIN_CHARS should be skipped."""
+        mock_api.return_value = _make_mock_response(
+            json.dumps(
+                [
+                    {
+                        "front": "Q?",
+                        "back": "A.",
+                        "card_type": "qa",
+                        "bloom_level": "remember",
+                        "tags": ["test"],
+                        "related_concepts": [],
+                        "mnemonic_hint": None,
+                    }
+                ]
+            )
+        )
+
+        config = AppConfig()
+        short_text = "# 第 4 章"
+        long_text = "# 第 4 章\n\nディープラーニングの概要について詳しく説明する。ニューラルネットワークは脳の神経回路網を模した機械学習モデルである。"
+        sections = [
+            Section(
+                id="section-0",
+                heading="第 4 章",
+                level=1,
+                breadcrumb="test > 第 4 章",
+                text=short_text,
+                page_range="",
+                char_count=len(short_text),
+            ),
+            Section(
+                id="section-1",
+                heading="ディープラーニングの概要",
+                level=2,
+                breadcrumb="test > ディープラーニングの概要",
+                text=long_text,
+                page_range="",
+                char_count=len(long_text),
+            ),
+        ]
+
+        result, _ = extract_cards(
+            text="Full text.",
+            source_file="test.pdf",
+            config=config,
+            sections=sections,
+        )
+
+        # Only section-1 should be processed (section-0 is too short)
+        assert mock_api.call_count == 1
+        assert result.card_count == 1
+
+    @patch("pdf2anki.structure._call_claude_api")
+    def test_sections_all_short_returns_empty(self, mock_api: MagicMock) -> None:
+        """When all sections are too short, no API calls and empty result."""
+        config = AppConfig()
+        sections = [
+            Section(
+                id="section-0",
+                heading="第 4 章",
+                level=1,
+                breadcrumb="test > 第 4 章",
+                text="# 第 4 章",
+                page_range="",
+                char_count=7,
+            ),
+        ]
+
+        result, _ = extract_cards(
+            text="Full text.",
+            source_file="test.pdf",
+            config=config,
+            sections=sections,
+        )
+
+        assert mock_api.call_count == 0
+        assert result.card_count == 0
