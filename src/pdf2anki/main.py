@@ -145,9 +145,7 @@ def _parse_csv_option(value: str | None) -> list[str] | None:
 
 @app.command()
 def convert(
-    input_path: str = typer.Argument(
-        ..., help="Input file or directory (PDF/TXT/MD)"
-    ),
+    input_path: str = typer.Argument(..., help="Input file or directory (PDF/TXT/MD)"),
     output: str | None = typer.Option(
         None, "-o", "--output", help="Output file or directory"
     ),
@@ -159,9 +157,7 @@ def convert(
         "--quality",
         help="Quality pipeline level",
     ),
-    model: str | None = typer.Option(
-        None, "--model", help="Claude model name"
-    ),
+    model: str | None = typer.Option(None, "--model", help="Claude model name"),
     max_cards: int | None = typer.Option(
         None, "--max-cards", help="Maximum cards to generate"
     ),
@@ -184,9 +180,7 @@ def convert(
     budget_limit: float | None = typer.Option(
         None, "--budget-limit", help="Budget limit in USD"
     ),
-    ocr: bool = typer.Option(
-        False, "--ocr", help="Enable OCR for image-heavy PDFs"
-    ),
+    ocr: bool = typer.Option(False, "--ocr", help="Enable OCR for image-heavy PDFs"),
     lang: str | None = typer.Option(
         None, "--lang", help="OCR language (default: jpn+eng)"
     ),
@@ -213,12 +207,8 @@ def convert(
     push: bool = typer.Option(
         False, "--push", help="Push cards to Anki via AnkiConnect"
     ),
-    deck: str = typer.Option(
-        "pdf2anki", "--deck", help="Anki deck name for --push"
-    ),
-    verbose: bool = typer.Option(
-        False, "--verbose", help="Enable debug logging"
-    ),
+    deck: str = typer.Option("pdf2anki", "--deck", help="Anki deck name for --push"),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
 ) -> None:
     """Convert PDF/TXT/MD to Anki flashcards."""
     _log_fmt = "%(name)s %(levelname)s: %(message)s"
@@ -295,8 +285,11 @@ def convert(
             result = launch_review(result, scores)
 
         written = write_output(
-            result=result, output_path=output_path, fmt=fmt.value,
-            source_stem=file_path.stem, additional_tags=additional_tags,
+            result=result,
+            output_path=output_path,
+            fmt=fmt.value,
+            source_stem=file_path.stem,
+            additional_tags=additional_tags,
         )
         all_written.extend(written)
         total_cards += result.card_count
@@ -315,29 +308,25 @@ def convert(
     quality_report = merge_quality_reports(all_reports) if all_reports else None
 
     _print_summary(
-        card_count=total_cards, cost_tracker=cost_tracker,
-        quality_report=quality_report, written_files=all_written,
+        card_count=total_cards,
+        cost_tracker=cost_tracker,
+        quality_report=quality_report,
+        written_files=all_written,
         pushed_count=total_pushed,
     )
 
 
 @app.command()
 def preview(
-    input_path: str = typer.Argument(
-        ..., help="Input file (PDF/TXT/MD)"
-    ),
-    ocr: bool = typer.Option(
-        False, "--ocr", help="Enable OCR for image-heavy PDFs"
-    ),
+    input_path: str = typer.Argument(..., help="Input file (PDF/TXT/MD)"),
+    ocr: bool = typer.Option(False, "--ocr", help="Enable OCR for image-heavy PDFs"),
     lang: str | None = typer.Option(
         None, "--lang", help="OCR language (default: jpn+eng)"
     ),
     cache: bool | None = typer.Option(
         None, "--cache/--no-cache", help="Enable/disable extraction cache"
     ),
-    verbose: bool = typer.Option(
-        False, "--verbose", help="Enable debug logging"
-    ),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
 ) -> None:
     """Preview text extraction without generating cards (dry-run)."""
     _log_fmt = "%(name)s %(levelname)s: %(message)s"
@@ -393,15 +382,11 @@ def eval_cmd(
     output: str | None = typer.Option(
         None, "-o", "--output", help="JSON report output path"
     ),
-    model: str | None = typer.Option(
-        None, "--model", help="Claude model name"
-    ),
+    model: str | None = typer.Option(None, "--model", help="Claude model name"),
     config_path: str | None = typer.Option(
         None, "--config", help="Path to config YAML file"
     ),
-    verbose: bool = typer.Option(
-        False, "--verbose", help="Enable debug logging"
-    ),
+    verbose: bool = typer.Option(False, "--verbose", help="Enable debug logging"),
 ) -> None:
     """Evaluate prompt quality against a labeled dataset."""
     _log_fmt = "%(name)s %(levelname)s: %(message)s"
@@ -445,8 +430,7 @@ def eval_cmd(
     case_results = []
 
     console.print(
-        f"[bold]Evaluating:[/bold] {ds.name} v{ds.version} "
-        f"({len(ds.cases)} cases)"
+        f"[bold]Evaluating:[/bold] {ds.name} v{ds.version} ({len(ds.cases)} cases)"
     )
 
     for case in ds.cases:
@@ -464,9 +448,7 @@ def eval_cmd(
                 case_id=case.id,
             )
             case_results.append(cr)
-            matched = sum(
-                1 for m in cr.matches if m.matched_card is not None
-            )
+            matched = sum(1 for m in cr.matches if m.matched_card is not None)
             console.print(
                 f"[green]{matched}/{len(case.expected_cards)} matched[/green]"
             )
@@ -474,12 +456,28 @@ def eval_cmd(
             console.print(f"[red]Error: {e}[/red]")
             continue
 
-    metrics = calculate_metrics(
-        case_results, cost_usd=cost_tracker.total_cost
-    )
+    metrics = calculate_metrics(case_results, cost_usd=cost_tracker.total_cost)
     print_eval_report(metrics, case_results)
 
     if output is not None:
         out_path = Path(output)
         write_eval_json(metrics, case_results, out_path)
         console.print(f"\n[green]Report saved:[/green] {out_path}")
+
+
+@app.command()
+def web(
+    host: str = typer.Option("127.0.0.1", "--host", help="Server host"),
+    port: int = typer.Option(7860, "--port", help="Server port"),
+    share: bool = typer.Option(False, "--share", help="Create public Gradio link"),
+) -> None:
+    """Launch Gradio web interface."""
+    try:
+        from pdf2anki.web import launch_web
+    except ImportError:
+        console.print(
+            "[red]Error:[/red] Web UI requires Gradio. "
+            "Install with: [bold]pip install pdf2anki\\[web][/bold]"
+        )
+        raise typer.Exit(code=1) from None
+    launch_web(host=host, port=port, share=share)

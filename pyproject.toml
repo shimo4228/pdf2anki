@@ -20,6 +20,9 @@ dependencies = [
 ocr = [
     "ocrmypdf>=16.0.0",
 ]
+web = [
+    "gradio>=5.0",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
