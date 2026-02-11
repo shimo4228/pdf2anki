@@ -20,8 +20,11 @@ from pdf2anki.section import Section, split_by_headings
 
 # Approximate token limit for a single chunk (150K tokens ≈ 600K chars)
 DEFAULT_TOKEN_LIMIT = 150_000
-CHARS_PER_TOKEN = 4  # conservative estimate for mixed JP/EN
 MIN_TEXT_LENGTH = 50  # threshold for OCR fallback
+
+# Token estimation constants
+CJK_CHARS_PER_TOKEN = 2.5
+LATIN_CHARS_PER_TOKEN = 4.0
 
 _SUPPORTED_EXTENSIONS = {".pdf", ".txt", ".md"}
 
@@ -30,6 +33,29 @@ _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 # 3+ consecutive blank lines (empty or whitespace-only lines)
 _EXCESSIVE_BLANK_LINES_RE = re.compile(r"\n\s*\n(\s*\n)+")
+
+
+def _is_cjk(char: str) -> bool:
+    """Return True if *char* is a CJK character (漢字/ひらがな/カタカナ)."""
+    cp = ord(char)
+    return (
+        0x4E00 <= cp <= 0x9FFF  # CJK Unified Ideographs
+        or 0x3040 <= cp <= 0x309F  # Hiragana
+        or 0x30A0 <= cp <= 0x30FF  # Katakana
+        or 0x3400 <= cp <= 0x4DBF  # CJK Extension A
+        or 0xF900 <= cp <= 0xFAFF  # CJK Compatibility Ideographs
+    )
+
+
+def estimate_tokens(text: str) -> int:
+    """Estimate token count with CJK-aware character ratios.
+
+    Japanese/Chinese/Korean characters are ~2.5 chars per token,
+    while Latin characters are ~4 chars per token.
+    """
+    cjk_count = sum(1 for c in text if _is_cjk(c))
+    other_count = len(text) - cjk_count
+    return int(cjk_count / CJK_CHARS_PER_TOKEN + other_count / LATIN_CHARS_PER_TOKEN)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +87,7 @@ def split_into_chunks(text: str, token_limit: int = DEFAULT_TOKEN_LIMIT) -> list
     """Split text into chunks under the token limit.
 
     Splits at paragraph boundaries (double newlines) when possible.
-    Each chunk is at most token_limit * CHARS_PER_TOKEN characters.
+    Uses CJK-aware token estimation for accurate chunk sizing.
 
     Args:
         text: The full text to split.
@@ -80,32 +106,33 @@ def split_into_chunks(text: str, token_limit: int = DEFAULT_TOKEN_LIMIT) -> list
     if not stripped:
         return []
 
-    char_limit = token_limit * CHARS_PER_TOKEN
-
-    if len(stripped) <= char_limit:
+    if estimate_tokens(stripped) <= token_limit:
         return [stripped]
 
     paragraphs = stripped.split("\n\n")
     chunks: list[str] = []
     current: list[str] = []
-    current_len = 0
+    current_tokens = 0
 
     for para in paragraphs:
-        para_len = len(para)
-        separator_len = 2 if current else 0
+        para_tokens = estimate_tokens(para)
+        separator_tokens = 1 if current else 0  # "\n\n" ≈ 1 token
 
-        if current and (current_len + separator_len + para_len) > char_limit:
+        if current and (current_tokens + separator_tokens + para_tokens) > token_limit:
             chunks.append("\n\n".join(current))
             current = []
-            current_len = 0
+            current_tokens = 0
 
         # Handle individual paragraph exceeding limit
-        if para_len > char_limit and not current:
-            for i in range(0, para_len, char_limit):
+        if para_tokens > token_limit and not current:
+            # Compute effective chars-per-token for this paragraph
+            cpt = len(para) / para_tokens if para_tokens > 0 else LATIN_CHARS_PER_TOKEN
+            char_limit = int(token_limit * cpt)
+            for i in range(0, len(para), char_limit):
                 chunks.append(para[i : i + char_limit])
         else:
             current.append(para)
-            current_len += separator_len + para_len
+            current_tokens += separator_tokens + para_tokens
 
     if current:
         chunks.append("\n\n".join(current))

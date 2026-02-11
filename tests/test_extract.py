@@ -10,6 +10,7 @@ import pytest
 
 from pdf2anki.extract import (
     ExtractedDocument,
+    estimate_tokens,
     extract_text,
     preprocess_text,
     split_into_chunks,
@@ -389,3 +390,74 @@ class TestExtractTextSections:
         # Key content from sample.md should appear in at least one section
         section_text = " ".join(s.text for s in result.sections)
         assert "機械学習" in section_text or len(result.sections) > 0
+
+
+# ---------------------------------------------------------------------------
+# estimate_tokens tests
+# ---------------------------------------------------------------------------
+
+
+class TestEstimateTokens:
+    """Tests for CJK-aware token estimation."""
+
+    def test_english_only(self) -> None:
+        """English text: ~4 chars per token."""
+        text = "Hello world test"  # 16 chars
+        tokens = estimate_tokens(text)
+        assert tokens == 16 // 4  # 4
+
+    def test_japanese_only(self) -> None:
+        """Japanese text: ~2.5 chars per token (higher token count)."""
+        text = "これは日本語のテストです"  # 11 CJK chars
+        tokens = estimate_tokens(text)
+        # 11 / 2.5 = 4.4 → int(4.4) = 4
+        assert tokens == int(11 / 2.5)
+
+    def test_mixed_japanese_english(self) -> None:
+        """Mixed text should weight CJK and Latin separately."""
+        text = "Hello世界"  # 5 Latin + 2 CJK
+        tokens = estimate_tokens(text)
+        expected = int(2 / 2.5 + 5 / 4.0)
+        assert tokens == expected
+
+    def test_empty_string(self) -> None:
+        tokens = estimate_tokens("")
+        assert tokens == 0
+
+    def test_katakana(self) -> None:
+        """Katakana should be counted as CJK."""
+        text = "テスト"  # 3 katakana chars
+        tokens = estimate_tokens(text)
+        assert tokens == int(3 / 2.5)
+
+    def test_kanji(self) -> None:
+        """Kanji (CJK Unified Ideographs) should be counted as CJK."""
+        text = "漢字"  # 2 kanji chars
+        tokens = estimate_tokens(text)
+        assert tokens == int(2 / 2.5)
+
+    def test_japanese_higher_than_english_ratio(self) -> None:
+        """Same char count in Japanese should produce more tokens than English."""
+        jp_text = "あ" * 100  # 100 CJK chars
+        en_text = "a" * 100  # 100 Latin chars
+        jp_tokens = estimate_tokens(jp_text)
+        en_tokens = estimate_tokens(en_text)
+        assert jp_tokens > en_tokens
+
+    def test_whitespace_and_punctuation_as_latin(self) -> None:
+        """Whitespace and ASCII punctuation follow Latin ratio."""
+        text = "   "  # 3 spaces
+        tokens = estimate_tokens(text)
+        assert tokens == int(3 / 4.0)
+
+    def test_cjk_extension_a(self) -> None:
+        """CJK Extension A characters (U+3400-U+4DBF) should be detected."""
+        text = "\u3400"  # CJK Extension A
+        tokens = estimate_tokens(text)
+        assert tokens == int(1 / 2.5)
+
+    def test_cjk_compatibility(self) -> None:
+        """CJK Compatibility Ideographs (U+F900-U+FAFF) should be detected."""
+        text = "\uF900"  # CJK Compatibility
+        tokens = estimate_tokens(text)
+        assert tokens == int(1 / 2.5)

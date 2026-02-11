@@ -18,7 +18,8 @@ from rich.console import Console
 from rich.table import Table
 
 from pdf2anki.config import AppConfig, load_config
-from pdf2anki.cost import CostTracker
+from pdf2anki.cost import CostTracker, estimate_cost
+from pdf2anki.extract import estimate_tokens
 from pdf2anki.quality import QualityReport
 from pdf2anki.service import (
     collect_files,
@@ -365,10 +366,15 @@ def preview(
     table.add_column("Key", style="bold")
     table.add_column("Value")
 
+    tokens = estimate_tokens(doc.text)
+
     table.add_row("Source", doc.source_path)
     table.add_row("File type", doc.file_type)
     table.add_row("OCR used", str(doc.used_ocr))
     table.add_row("Text length", f"{len(doc.text)} chars")
+    table.add_row("Est. tokens", f"{tokens:,}")
+    cost = estimate_cost("claude-sonnet-4-5-20250929", tokens, tokens // 4)
+    table.add_row("Est. cost", f"${cost:.4f}")
     table.add_row("Chunks", str(len(doc.chunks)))
 
     console.print(table)
