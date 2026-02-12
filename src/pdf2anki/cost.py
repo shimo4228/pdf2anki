@@ -102,23 +102,16 @@ def estimate_cost(
         Estimated cost in USD.
     """
     if batch:
-        fallback = {"input": _FALLBACK_PRICING["input"] * 0.5,
-                     "output": _FALLBACK_PRICING["output"] * 0.5}
+        fallback = {
+            "input": _FALLBACK_PRICING["input"] * 0.5,
+            "output": _FALLBACK_PRICING["output"] * 0.5,
+        }
         pricing = BATCH_PRICING.get(model, fallback)
     else:
         pricing = MODEL_PRICING.get(model, _FALLBACK_PRICING)
     input_cost = (input_tokens / 1_000_000) * pricing["input"]
     output_cost = (output_tokens / 1_000_000) * pricing["output"]
     return input_cost + output_cost
-
-
-def estimate_image_tokens(width: int, height: int) -> int:
-    """Estimate Claude Vision API input tokens for an image.
-
-    Formula: tokens = (width * height) / 750
-    Reference: 1092x1092 ~ 1,590 tokens
-    """
-    return (width * height) // 750
 
 
 def select_model(

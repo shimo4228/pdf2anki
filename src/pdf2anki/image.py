@@ -15,7 +15,6 @@ import pymupdf  # type: ignore[import-untyped]
 # Claude Vision API constraints
 VISION_MAX_DIMENSION = 1568  # px (long edge)
 VISION_MAX_MEGAPIXELS = 1_150_000  # 1.15 MP in pixels
-VISION_RECOMMENDED_DPI = 150
 
 # Type alias for detected image tuple
 _Detected = tuple[int, int, int, int, tuple[float, float, float, float], float]
@@ -98,8 +97,7 @@ def detect_page_images(
         total_image_area += max(bbox_area, 0.0)
 
         detected.append(
-            (xref, img_index, img_width, img_height,
-             (x0, y0, x1, y1), bbox_area),
+            (xref, img_index, img_width, img_height, (x0, y0, x1, y1), bbox_area),
         )
 
     coverage = total_image_area / page_area
@@ -146,9 +144,7 @@ def _extract_and_resize(
 
     if max_dim > VISION_MAX_DIMENSION or total_pixels > VISION_MAX_MEGAPIXELS:
         scale_dim = (
-            VISION_MAX_DIMENSION / max_dim
-            if max_dim > VISION_MAX_DIMENSION
-            else 1.0
+            VISION_MAX_DIMENSION / max_dim if max_dim > VISION_MAX_DIMENSION else 1.0
         )
         scale_px = (
             (VISION_MAX_MEGAPIXELS / total_pixels) ** 0.5
@@ -202,7 +198,8 @@ def extract_page_images(
             xref = page.get_images(full=True)[img.index][0]
             try:
                 img_bytes, media_type, w, h = _extract_and_resize(
-                    doc, xref,
+                    doc,
+                    xref,
                 )
                 extracted.append(
                     ExtractedImage(
