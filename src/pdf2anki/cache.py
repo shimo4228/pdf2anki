@@ -9,6 +9,9 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,6 +22,13 @@ from pdf2anki.section import Section
 logger = logging.getLogger(__name__)
 
 _HASH_CHUNK_SIZE = 65536  # 64 KB reads for large-file hashing
+_VALID_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+
+
+def _validate_hash(file_hash: str) -> None:
+    """Ensure file_hash is a valid SHA-256 hex string."""
+    if not _VALID_HASH_RE.match(file_hash):
+        raise ValueError(f"Invalid file hash: {file_hash!r}")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +74,11 @@ def read_cache(cache_dir: Path, file_hash: str) -> CacheEntry | None:
 
     Returns:
         CacheEntry if cache hit and valid, None otherwise.
+
+    Raises:
+        ValueError: If file_hash is not a valid SHA-256 hex string.
     """
+    _validate_hash(file_hash)
     cache_file = cache_dir / f"{file_hash}.json"
     if not cache_file.is_file():
         return None
@@ -91,11 +105,13 @@ def write_cache(cache_dir: Path, entry: CacheEntry) -> Path:
         Path to the written cache file.
     """
     cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir.chmod(stat.S_IRWXU)  # 0o700 owner-only
     cache_file = cache_dir / f"{entry.file_hash}.json"
     data = _serialize_entry(entry)
     cache_file.write_text(
         json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    os.chmod(cache_file, stat.S_IRUSR | stat.S_IWUSR)  # 0o600 owner-only
     return cache_file
 
 
@@ -113,6 +129,7 @@ def invalidate_cache(cache_dir: Path, file_hash: str | None = None) -> int:
         return 0
 
     if file_hash is not None:
+        _validate_hash(file_hash)
         cache_file = cache_dir / f"{file_hash}.json"
         if cache_file.is_file():
             cache_file.unlink()

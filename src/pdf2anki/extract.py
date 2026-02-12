@@ -223,7 +223,7 @@ def _run_ocr(path: Path, lang: str) -> str:
         ImportError: If ocrmypdf is not installed.
     """
     try:
-        import ocrmypdf
+        import ocrmypdf  # type: ignore[import-not-found]
     except ImportError as e:
         raise ImportError(
             "OCR requires the 'ocr' extra: pip install pdf2anki[ocr]"

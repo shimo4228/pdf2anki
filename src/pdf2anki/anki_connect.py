@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
@@ -16,6 +17,8 @@ from pdf2anki.schemas import AnkiCard, CardType
 
 ANKICONNECT_URL = "http://127.0.0.1:8765"
 ANKICONNECT_VERSION = 6
+_ALLOWED_HOSTS = frozenset({"127.0.0.1", "localhost"})
+_REQUEST_TIMEOUT = 10  # seconds
 
 
 class AnkiConnectError(Exception):
@@ -34,6 +37,11 @@ class PushResult:
 
 def _invoke(action: str, *, url: str = ANKICONNECT_URL, **params: Any) -> Any:
     """Call AnkiConnect API. Raises AnkiConnectError on failure."""
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname not in _ALLOWED_HOSTS:
+        raise AnkiConnectError(
+            f"AnkiConnect URL must be localhost, got: {parsed.hostname}"
+        )
     payload = json.dumps(
         {
             "action": action,
@@ -45,7 +53,7 @@ def _invoke(action: str, *, url: str = ANKICONNECT_URL, **params: Any) -> Any:
         url, data=payload, headers={"Content-Type": "application/json"}
     )
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
             body = json.loads(resp.read())
     except urllib.error.URLError as e:
         raise AnkiConnectError(

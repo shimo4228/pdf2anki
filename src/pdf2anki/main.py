@@ -143,6 +143,19 @@ def _parse_csv_option(value: str | None) -> list[str] | None:
     return [item.strip() for item in value.split(",")]
 
 
+def _validate_api_key() -> None:
+    """Validate ANTHROPIC_API_KEY is set before expensive processing."""
+    import os
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        console.print(
+            "[red]Error:[/red] ANTHROPIC_API_KEY environment variable is not set.\n"
+            "Set it via: [bold]export ANTHROPIC_API_KEY=<your-api-key>[/bold]"
+        )
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def convert(
     input_path: str = typer.Argument(..., help="Input file or directory (PDF/TXT/MD)"),
@@ -214,6 +227,8 @@ def convert(
     _log_fmt = "%(name)s %(levelname)s: %(message)s"
     if verbose:
         logging.basicConfig(level=logging.DEBUG, format=_log_fmt)
+
+    _validate_api_key()
 
     try:
         config = _build_config(
@@ -469,9 +484,14 @@ def eval_cmd(
 def web(
     host: str = typer.Option("127.0.0.1", "--host", help="Server host"),
     port: int = typer.Option(7860, "--port", help="Server port"),
-    share: bool = typer.Option(False, "--share", help="Create public Gradio link"),
 ) -> None:
     """Launch Gradio web interface."""
+    if host != "127.0.0.1":
+        console.print(
+            f"[yellow]Warning:[/yellow] Binding to [bold]{host}[/bold]. "
+            "The Web UI has no authentication — anyone on the network "
+            "can access it and consume your API budget."
+        )
     try:
         from pdf2anki.web import launch_web
     except ImportError:
@@ -480,4 +500,4 @@ def web(
             "Install with: [bold]pip install pdf2anki\\[web][/bold]"
         )
         raise typer.Exit(code=1) from None
-    launch_web(host=host, port=port, share=share)
+    launch_web(host=host, port=port)

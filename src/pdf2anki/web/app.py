@@ -7,6 +7,7 @@ Local-only by default (127.0.0.1). No authentication.
 from __future__ import annotations
 
 import atexit
+import glob as glob_mod
 import logging
 import shutil
 import tempfile
@@ -22,6 +23,12 @@ from pdf2anki.schemas import ExtractionResult
 from pdf2anki.service import process_file
 
 logger = logging.getLogger(__name__)
+
+_MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+
+# Clean stale temp dirs from previous crashed sessions.
+for _old in glob_mod.glob(f"{tempfile.gettempdir()}/pdf2anki_web_*"):
+    shutil.rmtree(_old, ignore_errors=True)
 
 # Session-scoped temp dir; cleaned up on process exit.
 _TEMP_DIR = tempfile.mkdtemp(prefix="pdf2anki_web_")
@@ -81,6 +88,8 @@ def generate_cards(
     vision: bool,
 ) -> tuple[str, str, list[list[str]], ExtractionResult | None, str | None, str | None]:
     """Upload -> process_file -> (status, cost, table, state, tsv, json)."""
+    import anthropic
+
     if file_path is None:
         return "Please upload a file first.", "", [], None, None, None
 
@@ -88,10 +97,14 @@ def generate_cards(
     if path.suffix.lower() not in {".pdf", ".txt", ".md"}:
         return f"Unsupported file type: {path.suffix}", "", [], None, None, None
 
+    if path.stat().st_size > _MAX_FILE_SIZE:
+        return "File too large (max 100 MB).", "", [], None, None, None
+
     try:
         config = _build_config_from_ui(model, quality, int(max_cards), budget, vision)
-    except Exception as e:
-        return f"Config error: {e}", "", [], None, None, None
+    except (ValueError, TypeError) as e:
+        logger.error("Config build failed: %s", e)
+        return "Config error. Check server logs for details.", "", [], None, None, None
 
     cost_tracker = CostTracker(budget_limit=config.cost_budget_limit)
 
@@ -104,9 +117,16 @@ def generate_cards(
             focus_topics=None,
             additional_tags=None,
         )
-    except Exception as e:
-        logger.exception("Card generation failed")
-        return f"Generation failed: {e}", "", [], None, None, None
+    except (RuntimeError, ValueError, anthropic.APIError) as e:
+        logger.error("Card generation failed: %s", type(e).__name__)
+        return (
+            "Generation failed. Check server logs for details.",
+            "",
+            [],
+            None,
+            None,
+            None,
+        )
 
     table = [
         [c.front[:100], c.back[:100], c.card_type.value, c.bloom_level.value]
@@ -131,12 +151,13 @@ def push_to_anki(
     if result_state is None or not result_state.cards:
         return "No cards to push. Generate cards first."
 
-    try:
-        from pdf2anki.anki_connect import push_cards
+    from pdf2anki.anki_connect import AnkiConnectError, push_cards
 
+    try:
         push_result = push_cards(list(result_state.cards), deck_name=deck_name)
-    except Exception as e:
-        return f"Push failed: {e}"
+    except (AnkiConnectError, OSError) as e:
+        logger.error("Anki push failed: %s", e)
+        return "Push failed. Check server logs for details."
 
     if push_result.failed > 0:
         return (
@@ -232,13 +253,8 @@ def launch_web(
     *,
     host: str = "127.0.0.1",
     port: int = 7860,
-    share: bool = False,
 ) -> None:
     """Launch the Gradio web interface."""
-    if share:
-        logger.warning(
-            "WARNING: --share exposes this server to the internet. "
-            "Anyone with the URL can use your ANTHROPIC_API_KEY."
-        )
     demo = create_interface()
-    demo.launch(server_name=host, server_port=port, share=share)
+    demo.queue(max_size=5)
+    demo.launch(server_name=host, server_port=port, share=False)
