@@ -26,6 +26,12 @@ from pdf2anki.section import Section
 from pdf2anki.service import merge_quality_reports
 
 
+@pytest.fixture(autouse=True)
+def _set_dummy_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure ANTHROPIC_API_KEY is set for CLI validation."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-dummy-key")
+
+
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()
@@ -107,6 +113,7 @@ def mock_extracted_doc() -> ExtractedDocument:
 def _get_app():
     """Lazily import the app to avoid import errors during RED phase."""
     from pdf2anki.main import app
+
     return app
 
 
@@ -386,10 +393,7 @@ class TestConvertOptions:
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        config = (
-            call_kwargs.kwargs.get("config")
-            or call_kwargs[1].get("config")
-        )
+        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
         assert config.cards_max_cards == 10
 
     @patch("pdf2anki.service.extract_cards")
@@ -428,10 +432,9 @@ class TestConvertOptions:
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        additional_tags = (
-            call_kwargs.kwargs.get("additional_tags")
-            or call_kwargs[1].get("additional_tags")
-        )
+        additional_tags = call_kwargs.kwargs.get("additional_tags") or call_kwargs[
+            1
+        ].get("additional_tags")
         assert "AI::基礎" in additional_tags
         assert "test" in additional_tags
 
@@ -471,9 +474,8 @@ class TestConvertOptions:
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        focus_topics = (
-            call_kwargs.kwargs.get("focus_topics")
-            or call_kwargs[1].get("focus_topics")
+        focus_topics = call_kwargs.kwargs.get("focus_topics") or call_kwargs[1].get(
+            "focus_topics"
         )
         assert "CNN" in focus_topics
         assert "RNN" in focus_topics
@@ -514,9 +516,8 @@ class TestConvertOptions:
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        bloom_filter = (
-            call_kwargs.kwargs.get("bloom_filter")
-            or call_kwargs[1].get("bloom_filter")
+        bloom_filter = call_kwargs.kwargs.get("bloom_filter") or call_kwargs[1].get(
+            "bloom_filter"
         )
         assert "remember" in bloom_filter
         assert "understand" in bloom_filter
@@ -557,10 +558,7 @@ class TestConvertOptions:
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        config = (
-            call_kwargs.kwargs.get("config")
-            or call_kwargs[1].get("config")
-        )
+        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
         assert config.cost_budget_limit == 0.50
 
     @patch("pdf2anki.service.extract_cards")
@@ -636,10 +634,7 @@ class TestConvertOptions:
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        config = (
-            call_kwargs.kwargs.get("config")
-            or call_kwargs[1].get("config")
-        )
+        config = call_kwargs.kwargs.get("config") or call_kwargs[1].get("config")
         assert config.model == "claude-haiku-4-5-20251001"
 
     @patch("pdf2anki.service.extract_cards")
@@ -903,6 +898,170 @@ class TestOutputContent:
 # ============================================================
 
 
+class TestBuildConfig:
+    """Tests for _build_config helper covering uncovered branches."""
+
+    def test_card_types_override(self) -> None:
+        from pdf2anki.main import QualityLevel, _build_config
+
+        cfg = _build_config(
+            config_path=None,
+            model=None,
+            max_cards=None,
+            card_types="qa,cloze,reversible",
+            bloom_filter=None,
+            budget_limit=None,
+            ocr=False,
+            lang=None,
+            quality=QualityLevel.OFF,
+            cache=None,
+        )
+        assert cfg.cards_card_types == ["qa", "cloze", "reversible"]
+
+    def test_bloom_filter_override(self) -> None:
+        from pdf2anki.main import QualityLevel, _build_config
+
+        cfg = _build_config(
+            config_path=None,
+            model=None,
+            max_cards=None,
+            card_types=None,
+            bloom_filter="remember,understand",
+            budget_limit=None,
+            ocr=False,
+            lang=None,
+            quality=QualityLevel.OFF,
+            cache=None,
+        )
+        assert cfg.cards_bloom_filter == ["remember", "understand"]
+
+    def test_lang_override(self) -> None:
+        from pdf2anki.main import QualityLevel, _build_config
+
+        cfg = _build_config(
+            config_path=None,
+            model=None,
+            max_cards=None,
+            card_types=None,
+            bloom_filter=None,
+            budget_limit=None,
+            ocr=True,
+            lang="eng",
+            quality=QualityLevel.OFF,
+            cache=None,
+        )
+        assert cfg.ocr_lang == "eng"
+        assert cfg.ocr_enabled is True
+
+    def test_vision_override(self) -> None:
+        from pdf2anki.main import QualityLevel, _build_config
+
+        cfg = _build_config(
+            config_path=None,
+            model=None,
+            max_cards=None,
+            card_types=None,
+            bloom_filter=None,
+            budget_limit=None,
+            ocr=False,
+            lang=None,
+            quality=QualityLevel.OFF,
+            cache=None,
+            vision=True,
+        )
+        assert cfg.vision_enabled is True
+
+    def test_no_overrides_returns_base(self) -> None:
+        from pdf2anki.main import QualityLevel, _build_config
+
+        cfg = _build_config(
+            config_path=None,
+            model=None,
+            max_cards=None,
+            card_types=None,
+            bloom_filter=None,
+            budget_limit=None,
+            ocr=False,
+            lang=None,
+            quality=QualityLevel.BASIC,
+            cache=None,
+        )
+        # Should return base config unchanged
+        from pdf2anki.config import DEFAULT_MODEL
+
+        assert cfg.model == DEFAULT_MODEL
+
+
+class TestValidateApiKey:
+    """Tests for _validate_api_key helper."""
+
+    def test_raises_exit_when_missing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        from pdf2anki.main import _validate_api_key
+
+        with pytest.raises((SystemExit, Exception)):
+            _validate_api_key()
+
+    def test_passes_when_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-key")
+        from pdf2anki.main import _validate_api_key
+
+        _validate_api_key()  # Should not raise
+
+
+class TestPreviewErrors:
+    """Tests for uncovered error paths in preview command."""
+
+    def test_preview_unsupported_type(self, runner: CliRunner, tmp_path: Path) -> None:
+        csv_file = tmp_path / "test.csv"
+        csv_file.write_text("a,b,c")
+        result = runner.invoke(_get_app(), ["preview", str(csv_file)])
+        assert result.exit_code != 0
+        assert "Unsupported" in result.output
+
+
+class TestCacheClear:
+    """Tests for --cache-clear option."""
+
+    @patch("pdf2anki.cache.invalidate_cache", return_value=5)
+    @patch("pdf2anki.service.extract_cards")
+    @patch("pdf2anki.service.extract_text")
+    def test_cache_clear_flag(
+        self,
+        mock_extract_text,
+        mock_extract_cards,
+        mock_invalidate,
+        runner: CliRunner,
+        sample_txt: Path,
+        tmp_path: Path,
+        mock_extracted_doc: ExtractedDocument,
+        mock_extraction_result: ExtractionResult,
+    ):
+        mock_extract_text.return_value = mock_extracted_doc
+        mock_extract_cards.return_value = (
+            mock_extraction_result,
+            CostTracker(),
+        )
+
+        output = tmp_path / "out.tsv"
+        result = runner.invoke(
+            _get_app(),
+            [
+                "convert",
+                str(sample_txt),
+                "-o",
+                str(output),
+                "--cache-clear",
+                "--quality",
+                "off",
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert "Cache cleared" in result.output
+        mock_invalidate.assert_called_once()
+
+
 class TestParseCsvOption:
     """Tests for _parse_csv_option helper."""
 
@@ -929,12 +1088,22 @@ class TestMergeQualityReports:
 
     def test_multiple_reports(self):
         r1 = QualityReport(
-            total_cards=5, passed_cards=3, critiqued_cards=2,
-            removed_cards=1, improved_cards=1, split_cards=0, final_card_count=4,
+            total_cards=5,
+            passed_cards=3,
+            critiqued_cards=2,
+            removed_cards=1,
+            improved_cards=1,
+            split_cards=0,
+            final_card_count=4,
         )
         r2 = QualityReport(
-            total_cards=10, passed_cards=8, critiqued_cards=2,
-            removed_cards=0, improved_cards=2, split_cards=1, final_card_count=11,
+            total_cards=10,
+            passed_cards=8,
+            critiqued_cards=2,
+            removed_cards=0,
+            improved_cards=2,
+            split_cards=1,
+            final_card_count=11,
         )
         merged = merge_quality_reports([r1, r2])
         assert merged.total_cards == 15
@@ -1037,9 +1206,8 @@ class TestProcessFileSections:
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        passed_sections = (
-            call_kwargs.kwargs.get("sections")
-            or call_kwargs[1].get("sections")
+        passed_sections = call_kwargs.kwargs.get("sections") or call_kwargs[1].get(
+            "sections"
         )
         assert passed_sections is not None
         assert len(passed_sections) == 1
@@ -1071,9 +1239,8 @@ class TestProcessFileSections:
 
         assert result.exit_code == 0
         call_kwargs = mock_extract_cards.call_args
-        passed_sections = (
-            call_kwargs.kwargs.get("sections")
-            or call_kwargs[1].get("sections")
+        passed_sections = call_kwargs.kwargs.get("sections") or call_kwargs[1].get(
+            "sections"
         )
         # No sections passed (None or not present)
         assert passed_sections is None
@@ -1236,9 +1403,7 @@ class TestPushFlag:
             mock_extraction_result,
             CostTracker(),
         )
-        mock_push_cards.return_value = PushResult(
-            total=2, added=2, failed=0, errors=()
-        )
+        mock_push_cards.return_value = PushResult(total=2, added=2, failed=0, errors=())
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
@@ -1281,9 +1446,7 @@ class TestPushFlag:
             mock_extraction_result,
             CostTracker(),
         )
-        mock_push_cards.return_value = PushResult(
-            total=2, added=2, failed=0, errors=()
-        )
+        mock_push_cards.return_value = PushResult(total=2, added=2, failed=0, errors=())
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(
@@ -1327,9 +1490,7 @@ class TestPushFlag:
             mock_extraction_result,
             CostTracker(),
         )
-        mock_push_cards.return_value = PushResult(
-            total=2, added=2, failed=0, errors=()
-        )
+        mock_push_cards.return_value = PushResult(total=2, added=2, failed=0, errors=())
 
         output = tmp_path / "out.tsv"
         result = runner.invoke(

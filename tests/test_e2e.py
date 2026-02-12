@@ -120,6 +120,12 @@ def _build_mock_client(
     return client
 
 
+@pytest.fixture(autouse=True)
+def _set_dummy_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure ANTHROPIC_API_KEY is set for CLI validation."""
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test-dummy-key")
+
+
 @pytest.fixture
 def runner() -> CliRunner:
     return CliRunner()

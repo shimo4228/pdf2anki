@@ -19,6 +19,12 @@ from pdf2anki.cache import (
 from pdf2anki.extract import ExtractedDocument
 from pdf2anki.section import Section
 
+# Valid SHA-256 hex strings for test fixtures
+_HASH_A = "a" * 64
+_HASH_B = "b" * 64
+_HASH_C = "c" * 64
+_HASH_D = "d" * 64
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -73,7 +79,7 @@ def document_with_sections() -> ExtractedDocument:
 def sample_entry(sample_document: ExtractedDocument) -> CacheEntry:
     """Minimal CacheEntry for tests."""
     return CacheEntry(
-        file_hash="abc123",
+        file_hash=_HASH_A,
         source_path="test.txt",
         document=sample_document,
     )
@@ -194,9 +200,7 @@ class TestSerializeDeserialize:
 
 
 class TestWriteReadCache:
-    def test_write_creates_file(
-        self, tmp_path: Path, sample_entry: CacheEntry
-    ) -> None:
+    def test_write_creates_file(self, tmp_path: Path, sample_entry: CacheEntry) -> None:
         cache_dir = tmp_path / "cache"
         path = write_cache(cache_dir, sample_entry)
         assert path.exists()
@@ -209,9 +213,7 @@ class TestWriteReadCache:
         write_cache(cache_dir, sample_entry)
         assert cache_dir.is_dir()
 
-    def test_read_after_write(
-        self, tmp_path: Path, sample_entry: CacheEntry
-    ) -> None:
+    def test_read_after_write(self, tmp_path: Path, sample_entry: CacheEntry) -> None:
         cache_dir = tmp_path / "cache"
         write_cache(cache_dir, sample_entry)
         result = read_cache(cache_dir, sample_entry.file_hash)
@@ -220,32 +222,36 @@ class TestWriteReadCache:
         assert result.document.text == sample_entry.document.text
 
     def test_read_miss(self, tmp_path: Path) -> None:
-        result = read_cache(tmp_path, "nonexistent_hash")
+        result = read_cache(tmp_path, _HASH_B)
         assert result is None
 
     def test_read_nonexistent_dir(self, tmp_path: Path) -> None:
-        result = read_cache(tmp_path / "no_such_dir", "abc123")
+        result = read_cache(tmp_path / "no_such_dir", _HASH_B)
         assert result is None
 
     def test_read_corrupted_file(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
-        bad_file = cache_dir / "abc123.json"
+        bad_file = cache_dir / f"{_HASH_B}.json"
         bad_file.write_text("not valid json{{{", encoding="utf-8")
-        result = read_cache(cache_dir, "abc123")
+        result = read_cache(cache_dir, _HASH_B)
         assert result is None
+
+    def test_read_rejects_invalid_hash(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid file hash"):
+            read_cache(tmp_path, "../etc/passwd")
 
     def test_round_trip_with_sections(
         self, tmp_path: Path, document_with_sections: ExtractedDocument
     ) -> None:
         entry = CacheEntry(
-            file_hash="sec456",
+            file_hash=_HASH_B,
             source_path="doc.pdf",
             document=document_with_sections,
         )
         cache_dir = tmp_path / "cache"
         write_cache(cache_dir, entry)
-        result = read_cache(cache_dir, "sec456")
+        result = read_cache(cache_dir, _HASH_B)
         assert result is not None
         assert len(result.document.sections) == 2
         assert result.document.sections[0].heading == "Intro"
@@ -256,7 +262,7 @@ class TestWriteReadCache:
     ) -> None:
         cache_dir = tmp_path / "cache"
         entry1 = CacheEntry(
-            file_hash="same_hash",
+            file_hash=_HASH_C,
             source_path="v1.txt",
             document=sample_document,
         )
@@ -271,13 +277,13 @@ class TestWriteReadCache:
             sections=(),
         )
         entry2 = CacheEntry(
-            file_hash="same_hash",
+            file_hash=_HASH_C,
             source_path="v2.txt",
             document=updated_doc,
         )
         write_cache(cache_dir, entry2)
 
-        result = read_cache(cache_dir, "same_hash")
+        result = read_cache(cache_dir, _HASH_C)
         assert result is not None
         assert result.document.text == "Updated content"
 
@@ -306,9 +312,10 @@ class TestInvalidateCache:
             file_type="txt",
             used_ocr=False,
         )
-        for i in range(3):
+        hashes = [f"{i:0>64x}" for i in range(3)]
+        for i, h in enumerate(hashes):
             entry = CacheEntry(
-                file_hash=f"hash_{i}",
+                file_hash=h,
                 source_path=f"file_{i}.txt",
                 document=doc,
             )
@@ -321,12 +328,16 @@ class TestInvalidateCache:
     def test_invalidate_nonexistent_hash(self, tmp_path: Path) -> None:
         cache_dir = tmp_path / "cache"
         cache_dir.mkdir()
-        count = invalidate_cache(cache_dir, "nonexistent")
+        count = invalidate_cache(cache_dir, _HASH_D)
         assert count == 0
 
     def test_invalidate_nonexistent_dir(self, tmp_path: Path) -> None:
-        count = invalidate_cache(tmp_path / "no_such_dir", "abc")
+        count = invalidate_cache(tmp_path / "no_such_dir", _HASH_D)
         assert count == 0
+
+    def test_invalidate_rejects_invalid_hash(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="Invalid file hash"):
+            invalidate_cache(tmp_path, "../escape")
 
 
 # ---------------------------------------------------------------------------

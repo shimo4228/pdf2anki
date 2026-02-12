@@ -302,9 +302,7 @@ class TestMatchCards:
             _make_card(front="四諦について", back="苦諦は第一の真理"),
         ]
         result = match_cards(expected, generated, case_id="t4")
-        matched_count = sum(
-            1 for m in result.matches if m.matched_card is not None
-        )
+        matched_count = sum(1 for m in result.matches if m.matched_card is not None)
         assert matched_count == 1
 
     def test_card_type_bonus(self) -> None:
@@ -318,9 +316,7 @@ class TestMatchCards:
                 card_type=CardType.QA,
             ),
         ]
-        card_qa = _make_card(
-            front="MLとは", back="機械学習", card_type=CardType.QA
-        )
+        card_qa = _make_card(front="MLとは", back="機械学習", card_type=CardType.QA)
         card_cloze = _make_card(
             front="MLとは", back="機械学習", card_type=CardType.CLOZE
         )
@@ -329,14 +325,8 @@ class TestMatchCards:
         result_cloze = match_cards(expected, [card_cloze], case_id="cloze")
 
         # QA match should have higher similarity due to type bonus
-        if (
-            result_qa.matches[0].matched_card
-            and result_cloze.matches[0].matched_card
-        ):
-            assert (
-                result_qa.matches[0].similarity
-                >= result_cloze.matches[0].similarity
-            )
+        if result_qa.matches[0].matched_card and result_cloze.matches[0].matched_card:
+            assert result_qa.matches[0].similarity >= result_cloze.matches[0].similarity
 
     def test_empty_generated(self) -> None:
         from pdf2anki.eval.dataset import ExpectedCard
@@ -403,11 +393,7 @@ class TestCalculateMetrics:
             CaseResult(
                 case_id="c1",
                 generated_cards=(card,),
-                matches=(
-                    MatchResult(
-                        expected=ec, matched_card=card, similarity=1.0
-                    ),
-                ),
+                matches=(MatchResult(expected=ec, matched_card=card, similarity=1.0),),
                 unmatched_generated=(),
             ),
         ]
@@ -429,11 +415,7 @@ class TestCalculateMetrics:
             CaseResult(
                 case_id="c1",
                 generated_cards=(),
-                matches=(
-                    MatchResult(
-                        expected=ec, matched_card=None, similarity=0.0
-                    ),
-                ),
+                matches=(MatchResult(expected=ec, matched_card=None, similarity=0.0),),
                 unmatched_generated=(),
             ),
         ]
@@ -454,11 +436,7 @@ class TestCalculateMetrics:
             CaseResult(
                 case_id="c1",
                 generated_cards=(card, extra1, extra2),
-                matches=(
-                    MatchResult(
-                        expected=ec, matched_card=card, similarity=0.8
-                    ),
-                ),
+                matches=(MatchResult(expected=ec, matched_card=card, similarity=0.8),),
                 unmatched_generated=(extra1, extra2),
             ),
         ]
@@ -495,21 +473,13 @@ class TestCalculateMetrics:
             CaseResult(
                 case_id="c1",
                 generated_cards=(c1,),
-                matches=(
-                    MatchResult(
-                        expected=ec1, matched_card=c1, similarity=0.9
-                    ),
-                ),
+                matches=(MatchResult(expected=ec1, matched_card=c1, similarity=0.9),),
                 unmatched_generated=(),
             ),
             CaseResult(
                 case_id="c2",
                 generated_cards=(c2,),
-                matches=(
-                    MatchResult(
-                        expected=ec2, matched_card=None, similarity=0.1
-                    ),
-                ),
+                matches=(MatchResult(expected=ec2, matched_card=None, similarity=0.1),),
                 unmatched_generated=(c2,),
             ),
         ]
@@ -528,7 +498,8 @@ class TestEvalReport:
     """Tests for report generation functions."""
 
     def test_print_eval_report_no_error(
-        self, capsys: pytest.CaptureFixture[str],
+        self,
+        capsys: pytest.CaptureFixture[str],
     ) -> None:
         from pdf2anki.eval.metrics import EvalMetrics
         from pdf2anki.eval.report import print_eval_report
@@ -551,26 +522,111 @@ class TestEvalReport:
         from pdf2anki.eval.report import print_comparison_report
 
         m1 = EvalMetrics(
-            recall=0.6, precision=0.5, f1=0.55,
-            avg_similarity=0.7, total_cost_usd=0.1,
-            total_expected=10, total_generated=15, total_matched=6,
+            recall=0.6,
+            precision=0.5,
+            f1=0.55,
+            avg_similarity=0.7,
+            total_cost_usd=0.1,
+            total_expected=10,
+            total_generated=15,
+            total_matched=6,
         )
         m2 = EvalMetrics(
-            recall=0.8, precision=0.75, f1=0.77,
-            avg_similarity=0.85, total_cost_usd=0.08,
-            total_expected=10, total_generated=12, total_matched=8,
+            recall=0.8,
+            precision=0.75,
+            f1=0.77,
+            avg_similarity=0.85,
+            total_cost_usd=0.08,
+            total_expected=10,
+            total_generated=12,
+            total_matched=8,
         )
         # Should not raise
         print_comparison_report(m1, m2, label_a="v1", label_b="v2")
+
+    def test_print_eval_report_with_case_results(self) -> None:
+        """Test per-case breakdown printing (lines 42-66)."""
+        from pdf2anki.eval.dataset import ExpectedCard
+        from pdf2anki.eval.matcher import CaseResult, MatchResult
+        from pdf2anki.eval.metrics import EvalMetrics
+        from pdf2anki.eval.report import print_eval_report
+
+        card = _make_card(front="Q", back="A")
+        ec = ExpectedCard(front_keywords=["Q"], back_keywords=["A"])
+        case_results = [
+            CaseResult(
+                case_id="c1",
+                generated_cards=(card,),
+                matches=(MatchResult(expected=ec, matched_card=card, similarity=0.9),),
+                unmatched_generated=(),
+            ),
+            CaseResult(
+                case_id="c2",
+                generated_cards=(card, card),
+                matches=(MatchResult(expected=ec, matched_card=None, similarity=0.1),),
+                unmatched_generated=(card,),
+            ),
+        ]
+        metrics = EvalMetrics(
+            recall=0.5,
+            precision=0.33,
+            f1=0.4,
+            avg_similarity=0.9,
+            total_cost_usd=0.05,
+            total_expected=2,
+            total_generated=3,
+            total_matched=1,
+        )
+        # Should not raise; exercises the per-case detail table
+        print_eval_report(metrics, case_results)
+
+    def test_write_eval_json_with_cases(self, tmp_path: Path) -> None:
+        """Test write_eval_json with non-empty case_results."""
+        from pdf2anki.eval.dataset import ExpectedCard
+        from pdf2anki.eval.matcher import CaseResult, MatchResult
+        from pdf2anki.eval.metrics import EvalMetrics
+        from pdf2anki.eval.report import write_eval_json
+
+        card = _make_card()
+        ec = ExpectedCard(front_keywords=["Q"], back_keywords=["A"])
+        case_results = [
+            CaseResult(
+                case_id="test-case",
+                generated_cards=(card,),
+                matches=(MatchResult(expected=ec, matched_card=card, similarity=0.8),),
+                unmatched_generated=(),
+            ),
+        ]
+        metrics = EvalMetrics(
+            recall=1.0,
+            precision=1.0,
+            f1=1.0,
+            avg_similarity=0.8,
+            total_cost_usd=0.01,
+            total_expected=1,
+            total_generated=1,
+            total_matched=1,
+        )
+        out = tmp_path / "report.json"
+        write_eval_json(metrics, case_results, out)
+        data = json.loads(out.read_text())
+        assert len(data["cases"]) == 1
+        assert data["cases"][0]["case_id"] == "test-case"
+        assert data["cases"][0]["matched_count"] == 1
 
     def test_write_eval_json(self, tmp_path: Path) -> None:
         from pdf2anki.eval.metrics import EvalMetrics
         from pdf2anki.eval.report import write_eval_json
 
         metrics = EvalMetrics(
-            recall=0.9, precision=0.85, f1=0.87,
-            avg_similarity=0.9, total_cost_usd=0.03,
-            total_expected=5, total_generated=6, total_matched=5,
+            recall=0.9,
+            precision=0.85,
+            f1=0.87,
+            avg_similarity=0.9,
+            total_cost_usd=0.03,
+            total_expected=5,
+            total_generated=6,
+            total_matched=5,
         )
         out = tmp_path / "report.json"
         write_eval_json(metrics, [], out)
