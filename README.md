@@ -1,8 +1,15 @@
 # pdf2anki
 
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-green)](LICENSE)
+[![Tests: 624 passed](https://img.shields.io/badge/tests-624%20passed-brightgreen)]()
+[![Coverage: 92%+](https://img.shields.io/badge/coverage-92%25%2B-brightgreen)]()
+
 [日本語版はこちら / Japanese](README.ja.md)
 
 A CLI tool that automatically generates high-quality Anki flashcards from PDF, text, and Markdown files using Claude AI.
+
+Built as a hands-on project to explore what's possible when you combine LLM structured extraction, cognitive science (Wozniak's 20 Rules), and a real evaluation framework — not just "ask the AI and hope for the best."
 
 ## Features
 
