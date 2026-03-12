@@ -1,6 +1,6 @@
-# pdf2anki
+Language: [English](README.md) | 日本語
 
-[English version](README.md)
+# pdf2anki
 
 PDF/テキスト/Markdown から高品質な Anki フラッシュカードを自動生成する CLI ツール。Claude AI を活用。
 
