@@ -39,9 +39,7 @@ class CardDisplay(Container):
     def compose(self) -> ComposeResult:
         yield Static("", id="card-content")
 
-    def render_card_text(
-        self, item: ReviewCard, index: int, total: int
-    ) -> str:
+    def render_card_text(self, item: ReviewCard, index: int, total: int) -> str:
         """Build the display text for a card (pure function)."""
         card = item.card
         status_label = item.status.value.upper()

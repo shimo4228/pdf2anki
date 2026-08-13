@@ -152,8 +152,11 @@ def _extract_and_resize(
             else 1.0
         )
         scale = min(scale_dim, scale_px)
-        mat = pymupdf.Matrix(scale, scale)
-        pix = pymupdf.Pixmap(pix, mat)
+        # Pixmap(source, width, height, clip) is the scaled-copy constructor;
+        # Pixmap(source, Matrix) is not a valid signature and raises TypeError.
+        new_w = max(1, int(pix.width * scale))
+        new_h = max(1, int(pix.height * scale))
+        pix = pymupdf.Pixmap(pix, new_w, new_h, None)
 
     # Convert CMYK / other colorspaces to RGB
     if (pix.n > 3 and pix.alpha == 0) or pix.n > 4:

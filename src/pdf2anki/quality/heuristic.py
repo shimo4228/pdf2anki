@@ -218,9 +218,8 @@ def _detect_flags(card: AnkiCard, scores: dict[str, float]) -> list[QualityFlag]
     term_types = (CardType.CLOZE, CardType.REVERSIBLE, CardType.TERM_DEFINITION)
     if card.card_type not in term_types:
         front = card.front
-        if (
-            len(front) < _MIN_FRONT_LENGTH
-            or (not _QUESTION_MARK_RE.search(front) and scores["front_quality"] < 0.7)
+        if len(front) < _MIN_FRONT_LENGTH or (
+            not _QUESTION_MARK_RE.search(front) and scores["front_quality"] < 0.7
         ):
             flags.append(QualityFlag.VAGUE_QUESTION)
 

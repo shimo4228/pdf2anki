@@ -245,9 +245,7 @@ class TestScoreCard:
         )
         assert score.weighted_total == pytest.approx(expected)
 
-    def test_score_card_returns_immutable(
-        self, high_quality_qa_card: AnkiCard
-    ) -> None:
+    def test_score_card_returns_immutable(self, high_quality_qa_card: AnkiCard) -> None:
         """CardConfidenceScore should be immutable (frozen=True)."""
         score = score_card(high_quality_qa_card)
         with pytest.raises(ValidationError):
@@ -446,9 +444,7 @@ class TestDuplicateDetection:
             tags=["AI::活性化関数"],
         )
         scores = score_cards([card_a, card_b])
-        has_duplicate = any(
-            QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores
-        )
+        has_duplicate = any(QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores)
         assert has_duplicate
 
     def test_cross_section_duplicates_detected(self) -> None:
@@ -474,9 +470,7 @@ class TestDuplicateDetection:
             tags=["AI::活性化関数", "_section::section-1"],
         )
         scores = score_cards([card_from_section_0, card_from_section_1])
-        has_duplicate = any(
-            QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores
-        )
+        has_duplicate = any(QualityFlag.DUPLICATE_CONCEPT in s.flags for s in scores)
         assert has_duplicate
 
 
@@ -1159,20 +1153,24 @@ class TestParseCritiqueResponse:
 
     def test_non_dict_items_skipped(self) -> None:
         """Non-dict items in the array should be skipped."""
-        response = json.dumps([
-            "string_item",
-            {"card_index": 0, "action": "keep"},
-        ])
+        response = json.dumps(
+            [
+                "string_item",
+                {"card_index": 0, "action": "keep"},
+            ]
+        )
         result = _parse_critique_response(response)
         assert len(result) == 1
 
     def test_missing_required_fields_skipped(self) -> None:
         """Items missing card_index or action should be skipped."""
-        response = json.dumps([
-            {"card_index": 0},
-            {"action": "keep"},
-            {"card_index": 1, "action": "improve"},
-        ])
+        response = json.dumps(
+            [
+                {"card_index": 0},
+                {"action": "keep"},
+                {"card_index": 1, "action": "improve"},
+            ]
+        )
         result = _parse_critique_response(response)
         assert len(result) == 1
         assert result[0]["card_index"] == 1
@@ -1335,9 +1333,7 @@ class TestCritiqueCardsEdgeCases:
 class TestPipelineReportCounting:
     """Cover removed_count and split_count branches in run_quality_pipeline."""
 
-    def test_pipeline_counts_removed_cards(
-        self, vague_question_card: AnkiCard
-    ) -> None:
+    def test_pipeline_counts_removed_cards(self, vague_question_card: AnkiCard) -> None:
         """Report should count removed cards when critique removes some."""
         config = AppConfig(
             quality_confidence_threshold=0.90,
@@ -1357,9 +1353,7 @@ class TestPipelineReportCounting:
             )
             assert report.removed_cards >= 1
 
-    def test_pipeline_counts_split_cards(
-        self, vague_question_card: AnkiCard
-    ) -> None:
+    def test_pipeline_counts_split_cards(self, vague_question_card: AnkiCard) -> None:
         """Report should count split cards when critique splits some."""
         config = AppConfig(
             quality_confidence_threshold=0.90,

@@ -7,6 +7,7 @@ called from any interface (CLI, future Web UI, tests).
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from pathlib import Path
 
@@ -163,13 +164,16 @@ def extract_with_cache(
 
     cache_dir = Path(config.cache_dir)
     file_hash = compute_file_hash(file_path)
+    # Key on extraction settings too: the same PDF extracted with and
+    # without OCR (or a different OCR language) yields different text.
+    cache_key = _extraction_cache_key(file_hash, config)
 
-    cached = read_cache(cache_dir, file_hash)
+    cached = read_cache(cache_dir, cache_key)
     if cached is not None:
-        logger.info("Cache hit: %s (hash=%s)", file_path.name, file_hash[:12])
+        logger.info("Cache hit: %s (key=%s)", file_path.name, cache_key[:12])
         return cached.document
 
-    logger.info("Cache miss: %s (hash=%s)", file_path.name, file_hash[:12])
+    logger.info("Cache miss: %s (key=%s)", file_path.name, cache_key[:12])
     doc = extract_text(
         file_path,
         ocr_enabled=config.ocr_enabled,
@@ -177,13 +181,21 @@ def extract_with_cache(
     )
 
     entry = CacheEntry(
-        file_hash=file_hash,
+        file_hash=cache_key,
         source_path=str(file_path),
         document=doc,
     )
     write_cache(cache_dir, entry)
 
     return doc
+
+
+def _extraction_cache_key(file_hash: str, config: AppConfig) -> str:
+    """Derive the cache key from content hash + extraction-affecting settings."""
+    if not config.ocr_enabled:
+        return file_hash
+    settings = f"{file_hash}:ocr:{config.ocr_lang}"
+    return hashlib.sha256(settings.encode("utf-8")).hexdigest()
 
 
 def process_file(
@@ -322,6 +334,12 @@ def _process_file_batch(
     additional_tags: list[str] | None,
 ) -> tuple[ExtractionResult, CostTracker]:
     """Process sections via Batch API (50% cost savings)."""
+    if not cost_tracker.is_within_budget:
+        raise RuntimeError(
+            f"Cost budget exceeded: ${cost_tracker.total_cost:.4f} / "
+            f"${cost_tracker.budget_limit:.2f} — batch not submitted"
+        )
+
     requests = create_batch_requests(
         sections,
         document_title=source_file,
@@ -349,6 +367,18 @@ def _process_file_batch(
 
     batch_results = collect_batch_results(batch_id)
 
+    # Surface partial failures: collect_batch_results drops errored/expired
+    # entries, so a shortfall here means whole sections are missing.
+    if len(batch_results) < len(requests):
+        missing = len(requests) - len(batch_results)
+        logger.warning(
+            "Batch %s: %d of %d section(s) returned no usable result — "
+            "their cards are missing from the output",
+            batch_id,
+            missing,
+            len(requests),
+        )
+
     all_cards: list[AnkiCard] = []
     model_used = ""
     for br in batch_results:
@@ -369,6 +399,16 @@ def _process_file_batch(
             cost_usd=cost,
         )
         cost_tracker = cost_tracker.add(record)
+
+    # Enforce the document-level card limit, matching the non-batch path
+    # (each batch entry may return up to its per-section limit).
+    if len(all_cards) > config.cards_max_cards:
+        logger.info(
+            "Batch returned %d cards, truncating to document limit %d",
+            len(all_cards),
+            config.cards_max_cards,
+        )
+        all_cards = all_cards[: config.cards_max_cards]
 
     result = ExtractionResult(
         source_file=source_file,

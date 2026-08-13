@@ -13,6 +13,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+import anthropic
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -96,6 +97,9 @@ def _build_config(
     if quality == QualityLevel.OFF:
         overrides["quality_enable_critique"] = False
         overrides["quality_confidence_threshold"] = 0.0
+    elif quality == QualityLevel.BASIC:
+        # basic = heuristic checks only; no paid LLM critique
+        overrides["quality_enable_critique"] = False
     elif quality == QualityLevel.FULL:
         overrides["quality_enable_critique"] = True
 
@@ -285,7 +289,9 @@ def convert(
                 batch=batch,
                 output_dir=output_path if output_path.is_dir() else output_path.parent,
             )
-        except (RuntimeError, ValueError) as e:
+        except (RuntimeError, ValueError, OSError, anthropic.APIError) as e:
+            # OSError covers poll_batch's TimeoutError; anthropic.APIError
+            # covers non-retryable API failures (auth, bad request, ...).
             console.print(f"[red]Error processing {file_path.name}:[/red] {e}")
             continue
 
@@ -310,15 +316,21 @@ def convert(
         total_cards += result.card_count
 
         if push and result.cards:
-            from pdf2anki.anki_connect import push_cards
+            from pdf2anki.anki_connect import AnkiConnectError, push_cards
 
-            push_result = push_cards(list(result.cards), deck_name=deck)
-            total_pushed += push_result.added
-            if push_result.failed > 0:
-                console.print(
-                    f"[yellow]Warning:[/yellow] {push_result.failed} card(s) "
-                    f"failed to push"
-                )
+            try:
+                push_result = push_cards(list(result.cards), deck_name=deck)
+            except AnkiConnectError as e:
+                # A push failure must not abort the remaining files —
+                # cards are already written to disk at this point.
+                console.print(f"[red]Push failed for {file_path.name}:[/red] {e}")
+            else:
+                total_pushed += push_result.added
+                if push_result.failed > 0:
+                    console.print(
+                        f"[yellow]Warning:[/yellow] {push_result.failed} card(s) "
+                        f"failed to push"
+                    )
 
     quality_report = merge_quality_reports(all_reports) if all_reports else None
 

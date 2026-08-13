@@ -15,7 +15,7 @@ import anthropic
 from pydantic import ValidationError
 
 from pdf2anki.config import DEFAULT_MODEL
-from pdf2anki.cost import CostRecord, CostTracker, estimate_cost
+from pdf2anki.cost import CostTracker, record_response_cost
 from pdf2anki.prompts import CRITIQUE_PROMPT
 from pdf2anki.schemas import AnkiCard
 
@@ -111,6 +111,14 @@ def critique_cards(
     if not cards:
         return [], cost_tracker
 
+    if not cost_tracker.is_within_budget:
+        logger.warning(
+            "Budget exceeded ($%.4f / $%.2f), skipping LLM critique",
+            cost_tracker.total_cost,
+            cost_tracker.budget_limit,
+        )
+        return list(cards), cost_tracker
+
     cards_data = [card.model_dump() for card in cards]
     cards_json = json.dumps(cards_data, ensure_ascii=False, indent=2)
 
@@ -126,18 +134,7 @@ def critique_cards(
         logger.error("API error during critique: %s", e)
         return list(cards), cost_tracker
 
-    cost = estimate_cost(
-        model=response.model,
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
-    )
-    record = CostRecord(
-        model=response.model,
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
-        cost_usd=cost,
-    )
-    cost_tracker = cost_tracker.add(record)
+    cost_tracker = record_response_cost(cost_tracker, response)
 
     if not response.content:
         logger.warning("Empty critique response")

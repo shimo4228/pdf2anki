@@ -132,23 +132,23 @@ def submit_batch(
 
     api_requests: list[batch_create_params.Request] = []
     for req in requests:
-        api_requests.append({
-            "custom_id": req.custom_id,
-            "params": {
-                "model": req.model,
-                "max_tokens": req.max_tokens,
-                "system": [
-                    {
-                        "type": "text",
-                        "text": req.system_prompt,
-                        "cache_control": {"type": "ephemeral"},
-                    }
-                ],
-                "messages": [
-                    {"role": "user", "content": req.user_prompt}
-                ],
-            },
-        })
+        api_requests.append(
+            {
+                "custom_id": req.custom_id,
+                "params": {
+                    "model": req.model,
+                    "max_tokens": req.max_tokens,
+                    "system": [
+                        {
+                            "type": "text",
+                            "text": req.system_prompt,
+                            "cache_control": {"type": "ephemeral"},
+                        }
+                    ],
+                    "messages": [{"role": "user", "content": req.user_prompt}],
+                },
+            }
+        )
 
     batch = client.messages.batches.create(requests=api_requests)
     logger.info("Batch submitted: %s (%d requests)", batch.id, len(requests))
@@ -234,9 +234,7 @@ def collect_batch_results(
 
         message = entry.result.message
         if not message.content:
-            logger.warning(
-                "Batch entry %s returned empty content", entry.custom_id
-            )
+            logger.warning("Batch entry %s returned empty content", entry.custom_id)
             continue
 
         first_block = message.content[0]

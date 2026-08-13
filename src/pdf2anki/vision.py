@@ -9,15 +9,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-import anthropic
 from anthropic.types import MessageParam
 
 from pdf2anki.config import AppConfig
-from pdf2anki.cost import CostRecord, CostTracker, estimate_cost
+from pdf2anki.cost import CostTracker, record_response_cost
 from pdf2anki.image import ExtractedImage, image_to_base64
 from pdf2anki.prompts import SYSTEM_PROMPT
 from pdf2anki.schemas import ExtractionResult
-from pdf2anki.structure import parse_cards_response
+from pdf2anki.structure import _call_with_retry, make_api_client, parse_cards_response
 
 logger = logging.getLogger(__name__)
 
@@ -74,14 +73,16 @@ def build_vision_messages(
         if not img.image_bytes:
             continue
         b64 = image_to_base64(img)
-        content.append({
-            "type": "image",
-            "source": {
-                "type": "base64",
-                "media_type": img.media_type,
-                "data": b64,
-            },
-        })
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": img.media_type,
+                    "data": b64,
+                },
+            }
+        )
 
     # Build text instruction
     parts: list[str] = []
@@ -91,9 +92,7 @@ def build_vision_messages(
     )
 
     if card_types:
-        parts.append(
-            f"Card types to generate: {', '.join(card_types)}"
-        )
+        parts.append(f"Card types to generate: {', '.join(card_types)}")
 
     if images:
         parts.append(
@@ -146,9 +145,7 @@ def extract_cards_with_vision(
         )
 
     # Use vision system prompt when images are present
-    system_prompt = (
-        VISION_SYSTEM_PROMPT if images else SYSTEM_PROMPT
-    )
+    system_prompt = VISION_SYSTEM_PROMPT if images else SYSTEM_PROMPT
 
     messages = build_vision_messages(
         text=text,
@@ -160,36 +157,24 @@ def extract_cards_with_vision(
     # Vision always uses Sonnet for best image understanding
     model = config.model
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
+    client = make_api_client()
+    response = _call_with_retry(
+        client=client,
         model=model,
         max_tokens=config.max_tokens,
-        system=[
-            {
-                "type": "text",
-                "text": system_prompt,
-                "cache_control": {"type": "ephemeral"},
-            }
-        ],
         messages=messages,
+        system_text=system_prompt,
     )
+
+    # Record cost first: the request is billed even if parsing fails below.
+    tracker = record_response_cost(tracker, response)
 
     cards = []
     if response.content and hasattr(response.content[0], "text"):
-        cards = parse_cards_response(response.content[0].text)
-
-    cost = estimate_cost(
-        model=response.model,
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
-    )
-    record = CostRecord(
-        model=response.model,
-        input_tokens=response.usage.input_tokens,
-        output_tokens=response.usage.output_tokens,
-        cost_usd=cost,
-    )
-    tracker = tracker.add(record)
+        try:
+            cards = parse_cards_response(response.content[0].text)
+        except ValueError as e:
+            logger.warning("Failed to parse vision response: %s", e)
 
     result = ExtractionResult(
         source_file=source_file,

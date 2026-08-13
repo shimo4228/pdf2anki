@@ -161,11 +161,7 @@ class TestSplitByHeadingsBasic:
 
     def test_h3_under_h2(self) -> None:
         """H3 under H2 should produce correct levels."""
-        md = (
-            "# 本論\n\n概要。\n\n"
-            "## 第1節\n\nテキスト。\n\n"
-            "### 第1項\n\n項目の内容。"
-        )
+        md = "# 本論\n\n概要。\n\n## 第1節\n\nテキスト。\n\n### 第1項\n\n項目の内容。"
         sections = split_by_headings(md)
         h3_sections = [s for s in sections if s.level == 3]
         assert len(h3_sections) == 1
@@ -337,11 +333,7 @@ class TestSplitByHeadingsEdgeCases:
 
     def test_mixed_heading_levels(self) -> None:
         """Mixed heading levels should all be parsed correctly."""
-        md = (
-            "# H1\n\n本文。\n\n"
-            "### H3直接\n\n内容。\n\n"
-            "## H2\n\n内容。"
-        )
+        md = "# H1\n\n本文。\n\n### H3直接\n\n内容。\n\n## H2\n\n内容。"
         sections = split_by_headings(md)
         levels = [s.level for s in sections]
         assert 1 in levels
@@ -605,3 +597,24 @@ class TestSplitByHeadingsJapaneseFallback:
         for section in sections:
             if section.heading:
                 assert "テスト文書" in section.breadcrumb
+
+
+class TestCodeFenceHeadings:
+    """コードフェンス内の # コメントを見出しとして誤検出しないこと。"""
+
+    def test_python_comment_in_fence_not_heading(self) -> None:
+        text = (
+            "# Real Heading\n\n"
+            "Some intro text here.\n\n"
+            "```python\n"
+            "# this is a comment, not a heading\n"
+            "x = 1\n"
+            "```\n\n"
+            "## Second Heading\n\n"
+            "More text.\n"
+        )
+        sections = split_by_headings(text, document_title="Doc")
+        headings = [s.heading for s in sections if s.heading]
+        assert "this is a comment, not a heading" not in headings
+        assert any("Real Heading" in h for h in headings)
+        assert any("Second Heading" in h for h in headings)

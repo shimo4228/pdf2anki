@@ -14,6 +14,9 @@ from typing import Any
 # Markdown heading pattern: # heading, ## heading, ### heading
 _MD_HEADING_RE = re.compile(r"^(#{1,3})\s+(.+)$", re.MULTILINE)
 
+# Paired code fences; '#' lines inside them are comments, not headings
+_CODE_FENCE_RE = re.compile(r"^```.*?^```[ \t]*$", re.DOTALL | re.MULTILINE)
+
 # Japanese heading patterns (line-start anchored)
 _JP_HEADING_PATTERNS: list[tuple[re.Pattern[str], int]] = [
     # Level 1: chapter-level
@@ -162,8 +165,14 @@ def split_by_headings(
     if not stripped:
         return []
 
-    # Try markdown headings first
-    heading_matches = list(_MD_HEADING_RE.finditer(stripped))
+    # Try markdown headings first — ignoring '#' lines inside code fences,
+    # which are comments, not headings.
+    fence_spans = [m.span() for m in _CODE_FENCE_RE.finditer(stripped)]
+    heading_matches = [
+        m
+        for m in _MD_HEADING_RE.finditer(stripped)
+        if not any(start <= m.start() < end for start, end in fence_spans)
+    ]
 
     if heading_matches:
         return _split_by_md_headings(

@@ -48,13 +48,9 @@ def print_eval_report(
         detail.add_column("Recall", justify="right", style="green")
 
         for cr in case_results:
-            matched = sum(
-                1 for m in cr.matches if m.matched_card is not None
-            )
+            matched = sum(1 for m in cr.matches if m.matched_card is not None)
             n_expected = len(cr.matches)
-            case_recall = (
-                matched / n_expected if n_expected > 0 else 0.0
-            )
+            case_recall = matched / n_expected if n_expected > 0 else 0.0
             detail.add_row(
                 cr.case_id,
                 str(n_expected),

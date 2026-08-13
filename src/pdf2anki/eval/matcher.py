@@ -109,13 +109,9 @@ def match_cards(
                 )
             )
         else:
-            matches.append(
-                MatchResult(expected=ec, matched_card=None, similarity=0.0)
-            )
+            matches.append(MatchResult(expected=ec, matched_card=None, similarity=0.0))
 
-    unmatched = tuple(
-        card for i, card in enumerate(generated) if i not in used_indices
-    )
+    unmatched = tuple(card for i, card in enumerate(generated) if i not in used_indices)
 
     return CaseResult(
         case_id=case_id,

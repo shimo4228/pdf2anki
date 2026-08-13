@@ -142,10 +142,8 @@ class TestBuildVisionMessages:
 class TestExtractCardsWithVision:
     """extract_cards_with_vision calls Claude Vision API and parses cards."""
 
-    @patch("pdf2anki.vision.anthropic.Anthropic")
-    def test_returns_extraction_result(
-        self, mock_anthropic_cls: MagicMock
-    ) -> None:
+    @patch("pdf2anki.structure.anthropic.Anthropic")
+    def test_returns_extraction_result(self, mock_anthropic_cls: MagicMock) -> None:
         mock_client = MagicMock()
         mock_anthropic_cls.return_value = mock_client
 
@@ -179,10 +177,8 @@ class TestExtractCardsWithVision:
         assert result.cards[0].front == "What is ReLU?"
         assert updated_tracker.request_count == 1
 
-    @patch("pdf2anki.vision.anthropic.Anthropic")
-    def test_no_images_falls_through(
-        self, mock_anthropic_cls: MagicMock
-    ) -> None:
+    @patch("pdf2anki.structure.anthropic.Anthropic")
+    def test_no_images_falls_through(self, mock_anthropic_cls: MagicMock) -> None:
         """With no images, should still work (text-only vision call)."""
         mock_client = MagicMock()
         mock_anthropic_cls.return_value = mock_client
@@ -207,10 +203,8 @@ class TestExtractCardsWithVision:
 
         assert result.card_count == 0
 
-    @patch("pdf2anki.vision.anthropic.Anthropic")
-    def test_vision_system_prompt_used(
-        self, mock_anthropic_cls: MagicMock
-    ) -> None:
+    @patch("pdf2anki.structure.anthropic.Anthropic")
+    def test_vision_system_prompt_used(self, mock_anthropic_cls: MagicMock) -> None:
         mock_client = MagicMock()
         mock_anthropic_cls.return_value = mock_client
 

@@ -38,6 +38,8 @@ class PushResult:
 def _invoke(action: str, *, url: str = ANKICONNECT_URL, **params: Any) -> Any:
     """Call AnkiConnect API. Raises AnkiConnectError on failure."""
     parsed = urllib.parse.urlparse(url)
+    if parsed.scheme != "http":
+        raise AnkiConnectError(f"AnkiConnect URL must use http, got: {parsed.scheme}")
     if parsed.hostname not in _ALLOWED_HOSTS:
         raise AnkiConnectError(
             f"AnkiConnect URL must be localhost, got: {parsed.hostname}"
@@ -53,13 +55,21 @@ def _invoke(action: str, *, url: str = ANKICONNECT_URL, **params: Any) -> Any:
         url, data=payload, headers={"Content-Type": "application/json"}
     )
     try:
-        with urllib.request.urlopen(req, timeout=_REQUEST_TIMEOUT) as resp:
+        # Scheme is validated to be exactly "http" and host is restricted
+        # to the localhost whitelist above, so B310 does not apply.
+        with urllib.request.urlopen(  # noqa: S310 # nosec B310
+            req, timeout=_REQUEST_TIMEOUT
+        ) as resp:
             body = json.loads(resp.read())
     except urllib.error.URLError as e:
         raise AnkiConnectError(
             "Anki is not running or AnkiConnect is not installed.\n"
             "Start Anki and install AnkiConnect add-on (code: 2055492159)."
         ) from e
+    except (json.JSONDecodeError, TimeoutError) as e:
+        raise AnkiConnectError(f"AnkiConnect returned an invalid response: {e}") from e
+    if not isinstance(body, dict) or "result" not in body:
+        raise AnkiConnectError(f"Malformed AnkiConnect response: {body!r}")
     if body.get("error"):
         raise AnkiConnectError(body["error"])
     return body["result"]
@@ -95,7 +105,7 @@ def card_to_note(card: AnkiCard, *, deck_name: str) -> dict[str, Any]:
     if card.card_type == CardType.REVERSIBLE:
         return {
             "deckName": deck_name,
-            "modelName": "Basic (and target: reversed card)",
+            "modelName": "Basic (and reversed card)",
             "fields": {"Front": card.front, "Back": card.back},
             "tags": tags,
             "options": {"allowDuplicate": False},

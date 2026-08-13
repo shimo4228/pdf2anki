@@ -52,20 +52,14 @@ def calculate_metrics(
                 total_matched += 1
                 similarity_sum += m.similarity
 
-    recall = (
-        total_matched / total_expected if total_expected > 0 else 0.0
-    )
-    precision = (
-        total_matched / total_generated if total_generated > 0 else 0.0
-    )
+    recall = total_matched / total_expected if total_expected > 0 else 0.0
+    precision = total_matched / total_generated if total_generated > 0 else 0.0
     f1 = (
         2 * recall * precision / (recall + precision)
         if (recall + precision) > 0
         else 0.0
     )
-    avg_sim = (
-        similarity_sum / total_matched if total_matched > 0 else 0.0
-    )
+    avg_sim = similarity_sum / total_matched if total_matched > 0 else 0.0
 
     return EvalMetrics(
         recall=recall,

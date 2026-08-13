@@ -13,7 +13,6 @@ from pdf2anki.tui.state import (
 )
 from pdf2anki.tui.widgets import ActionBar, CardDisplay, StatsBar
 
-
 # ── helpers ───────────────────────────────────────────────────
 
 
@@ -52,9 +51,7 @@ class TestCardDisplay:
         app = ReviewApp(_sample_state(3))
         async with app.run_test() as pilot:
             display = pilot.app.query_one(CardDisplay)
-            text = display.render_card_text(
-                pilot.app.state.items[0], 0, 3
-            )
+            text = display.render_card_text(pilot.app.state.items[0], 0, 3)
             assert "Question 0?" in text
             assert "Answer 0" in text
 

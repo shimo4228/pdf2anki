@@ -244,9 +244,10 @@ class TestCacheConfig:
         config = AppConfig(cache_enabled=True)
         assert config.cache_enabled is True
 
-    def test_cache_custom_dir(self) -> None:
-        config = AppConfig(cache_dir="/tmp/my_cache")
-        assert config.cache_dir == "/tmp/my_cache"
+    def test_cache_custom_dir(self, tmp_path: Path) -> None:
+        custom_dir = str(tmp_path / "my_cache")
+        config = AppConfig(cache_dir=custom_dir)
+        assert config.cache_dir == custom_dir
 
     def test_cache_from_yaml(self, tmp_path: Path) -> None:
         yaml_content = """
@@ -260,3 +261,30 @@ cache:
         config = load_config(config_path=str(config_file))
         assert config.cache_enabled is True
         assert config.cache_dir == ".my_cache"
+
+
+class TestModelOverrideDetection:
+    """YAML/env の非デフォルトモデル指定は routing より優先される。"""
+
+    def test_default_model_does_not_set_override(self, tmp_path: Path) -> None:
+        yaml_content = 'model: "claude-sonnet-4-5-20250929"\n'
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml_content)
+
+        config = load_config(config_path=str(config_file))
+        assert config.model_overridden is False
+
+    def test_non_default_yaml_model_sets_override(self, tmp_path: Path) -> None:
+        yaml_content = 'model: "claude-opus-4-6"\n'
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(yaml_content)
+
+        config = load_config(config_path=str(config_file))
+        assert config.model_overridden is True
+        assert config.model == "claude-opus-4-6"
+
+    def test_env_model_sets_override(self, monkeypatch) -> None:
+        monkeypatch.setenv("PDF2ANKI_MODEL", "claude-haiku-4-5-20251001")
+        config = load_config(None)
+        assert config.model_overridden is True
+        assert config.model == "claude-haiku-4-5-20251001"

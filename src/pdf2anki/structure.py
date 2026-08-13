@@ -11,13 +11,14 @@ import json
 import logging
 import re
 import time
+from typing import Any
 
 import anthropic
 from anthropic.types import MessageParam
 from pydantic import ValidationError
 
 from pdf2anki.config import DEFAULT_MODEL, AppConfig
-from pdf2anki.cost import CostRecord, CostTracker, estimate_cost, select_model
+from pdf2anki.cost import CostTracker, record_response_cost, select_model
 from pdf2anki.prompts import SYSTEM_PROMPT, build_section_prompt, build_user_prompt
 from pdf2anki.schemas import AnkiCard, ExtractionResult
 from pdf2anki.section import Section
@@ -27,6 +28,17 @@ logger = logging.getLogger(__name__)
 _MAX_RETRIES = 3
 _RETRY_DELAY_SECONDS = 2.0
 
+
+def make_api_client() -> anthropic.Anthropic:
+    """Anthropic client for use with _call_with_retry.
+
+    SDK-internal retries are disabled: _call_with_retry owns the retry
+    policy, and stacking both would mean ~9 attempts per call and keep
+    hammering an endpoint that is rate-limiting us.
+    """
+    return anthropic.Anthropic(max_retries=0)
+
+
 # Retryable API errors (network/rate-limit/server errors only)
 _RETRYABLE_ERRORS = (
     anthropic.APIConnectionError,
@@ -34,8 +46,28 @@ _RETRYABLE_ERRORS = (
     anthropic.InternalServerError,
 )
 
-# Regex to extract JSON from markdown code blocks
-_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n?(.*?)\n?```", re.DOTALL)
+# Regex to extract JSON from markdown code blocks. Greedy (first fence to
+# last fence): card text may itself contain ``` fences, and a non-greedy
+# match would truncate the payload at the first inner fence.
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*\n?(.*)\n?```", re.DOTALL)
+
+
+def _json_candidates(text: str) -> list[str]:
+    """Candidate substrings that may hold the JSON payload, in trust order.
+
+    1. The whole response (raw JSON arrays, fences inside strings intact).
+    2. The outermost fenced block (```json ... ``` with prose around it).
+    3. The first-'['-to-last-']' slice (prose around an un-fenced array).
+    """
+    candidates = [text]
+    match = _JSON_BLOCK_RE.search(text)
+    if match:
+        candidates.append(match.group(1).strip())
+    start = text.find("[")
+    end = text.rfind("]")
+    if start != -1 and end > start:
+        candidates.append(text[start : end + 1])
+    return candidates
 
 
 def parse_cards_response(response_text: str) -> list[AnkiCard]:
@@ -43,7 +75,9 @@ def parse_cards_response(response_text: str) -> list[AnkiCard]:
 
     Handles:
     - Direct JSON arrays
-    - JSON wrapped in ```json code blocks
+    - JSON wrapped in ```json code blocks (including cards whose text
+      itself contains code fences)
+    - JSON surrounded by prose
     - Skips invalid cards (logs warning instead of crashing)
 
     Args:
@@ -53,22 +87,31 @@ def parse_cards_response(response_text: str) -> list[AnkiCard]:
         List of validated AnkiCard objects.
 
     Raises:
-        ValueError: If response is not valid JSON or not an array.
+        ValueError: If no candidate parses as a JSON array.
     """
     text = response_text.strip()
 
-    # Extract JSON from markdown code blocks if present
-    match = _JSON_BLOCK_RE.search(text)
-    if match:
-        text = match.group(1).strip()
+    data: list[Any] | None = None
+    last_error: Exception | None = None
+    parsed_non_list: object | None = None
 
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Failed to parse LLM response as JSON: {e}") from e
+    for candidate in _json_candidates(text):
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError as e:
+            last_error = e
+            continue
+        if isinstance(parsed, list):
+            data = parsed
+            break
+        parsed_non_list = parsed
 
-    if not isinstance(data, list):
-        raise ValueError(f"Expected a JSON array of cards, got {type(data).__name__}")
+    if data is None:
+        if parsed_non_list is not None:
+            raise ValueError(
+                f"Expected a JSON array of cards, got {type(parsed_non_list).__name__}"
+            )
+        raise ValueError(f"Failed to parse LLM response as JSON: {last_error}")
 
     cards: list[AnkiCard] = []
     for i, item in enumerate(data):
@@ -87,6 +130,7 @@ def _call_claude_api(
     model: str,
     max_tokens: int,
     messages: list[MessageParam],
+    system_text: str = SYSTEM_PROMPT,
 ) -> anthropic.types.Message:
     """Call the Claude API with prompt caching for the system prompt.
 
@@ -95,6 +139,7 @@ def _call_claude_api(
         model: Model ID to use.
         max_tokens: Maximum output tokens.
         messages: User messages.
+        system_text: System prompt text (cached via cache_control).
 
     Returns:
         Claude API Message response.
@@ -105,7 +150,7 @@ def _call_claude_api(
         system=[
             {
                 "type": "text",
-                "text": SYSTEM_PROMPT,
+                "text": system_text,
                 "cache_control": {"type": "ephemeral"},
             }
         ],
@@ -184,7 +229,7 @@ def extract_cards(
     warn_threshold = config.cost_warn_at * config.cost_budget_limit
     cost_warned = False
 
-    client = anthropic.Anthropic()
+    client = make_api_client()
     all_cards: list[AnkiCard] = []
 
     for chunk in text_chunks:
@@ -218,6 +263,9 @@ def extract_cards(
             max_tokens=config.max_tokens,
             messages=messages,
         )
+        # Record cost first: the request is billed even if the content
+        # below turns out to be empty or unparsable.
+        tracker = record_response_cost(tracker, response)
 
         if not response.content:
             logger.warning("Empty API response for chunk, skipping")
@@ -232,21 +280,13 @@ def extract_cards(
             continue
 
         response_text = first_block.text
-        cards = parse_cards_response(response_text)
+        try:
+            cards = parse_cards_response(response_text)
+        except ValueError as e:
+            # One malformed chunk must not discard cards already generated
+            logger.warning("Failed to parse chunk response, skipping: %s", e)
+            continue
         all_cards.extend(cards)
-
-        cost = estimate_cost(
-            model=response.model,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-        )
-        record = CostRecord(
-            model=response.model,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            cost_usd=cost,
-        )
-        tracker = tracker.add(record)
 
     result = ExtractionResult(
         source_file=source_file,
@@ -276,7 +316,7 @@ def _extract_cards_from_sections(
     warn_threshold = config.cost_warn_at * config.cost_budget_limit
     cost_warned = False
 
-    client = anthropic.Anthropic()
+    client = make_api_client()
     all_cards: list[AnkiCard] = []
     model_used = ""
 
@@ -340,6 +380,9 @@ def _extract_cards_from_sections(
             max_tokens=config.max_tokens,
             messages=messages,
         )
+        # Record cost first: the request is billed even if the content
+        # below turns out to be empty or unparsable.
+        tracker = record_response_cost(tracker, response)
 
         if not response.content:
             logger.warning("Empty API response for section %s, skipping", section.id)
@@ -355,23 +398,19 @@ def _extract_cards_from_sections(
             continue
 
         response_text = first_block.text
-        cards = parse_cards_response(response_text)
+        try:
+            cards = parse_cards_response(response_text)
+        except ValueError as e:
+            # One malformed section must not discard cards already generated
+            logger.warning(
+                "Failed to parse response for section %s, skipping: %s",
+                section.id,
+                e,
+            )
+            continue
         # Inject section origin tag for cross-section dedup tracking
         tagged_cards = _inject_section_tag(cards, section.id)
         all_cards.extend(tagged_cards)
-
-        cost = estimate_cost(
-            model=response.model,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-        )
-        record = CostRecord(
-            model=response.model,
-            input_tokens=response.usage.input_tokens,
-            output_tokens=response.usage.output_tokens,
-            cost_usd=cost,
-        )
-        tracker = tracker.add(record)
 
     result = ExtractionResult(
         source_file=source_file,
@@ -397,14 +436,19 @@ def _call_with_retry(
     model: str,
     max_tokens: int,
     messages: list[MessageParam],
+    system_text: str = SYSTEM_PROMPT,
 ) -> anthropic.types.Message:
     """Call Claude API with exponential backoff retry.
+
+    Pass a client built with make_api_client() (max_retries=0): the SDK's
+    own retries would otherwise stack with this loop (~9 attempts).
 
     Args:
         client: Anthropic client.
         model: Model ID.
         max_tokens: Max output tokens.
         messages: User messages.
+        system_text: System prompt text.
 
     Returns:
         API response message.
@@ -421,6 +465,7 @@ def _call_with_retry(
                 model=model,
                 max_tokens=max_tokens,
                 messages=messages,
+                system_text=system_text,
             )
         except _RETRYABLE_ERRORS as e:
             last_error = e

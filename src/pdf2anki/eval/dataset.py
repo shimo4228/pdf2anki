@@ -63,9 +63,7 @@ def _parse_expected_card(data: dict[str, Any]) -> ExpectedCard:
 
 def _parse_case(data: dict[str, Any]) -> EvalCase:
     """Parse a single evaluation case from YAML data."""
-    expected = tuple(
-        _parse_expected_card(ec) for ec in data["expected_cards"]
-    )
+    expected = tuple(_parse_expected_card(ec) for ec in data["expected_cards"])
     return EvalCase(
         id=data["id"],
         text=data["text"],

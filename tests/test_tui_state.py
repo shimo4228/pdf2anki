@@ -16,7 +16,6 @@ from pdf2anki.tui.state import (
     set_card_status,
 )
 
-
 # ── fixtures ──────────────────────────────────────────────────
 
 
@@ -237,3 +236,63 @@ class TestCycleFilter:
 
         s = cycle_filter(s)
         assert s.filter_status is None
+
+
+class TestAdvanceAfterReview:
+    """フィルタ表示中の Accept/Reject でカードがスキップされないこと。"""
+
+    @staticmethod
+    def _pending_state(n: int = 3):
+        from pdf2anki.tui.state import ReviewCard, ReviewState
+
+        cards = [
+            AnkiCard(
+                front=f"Q{i}",
+                back=f"A{i}",
+                card_type=CardType.QA,
+                bloom_level=BloomLevel.REMEMBER,
+                tags=["t"],
+            )
+            for i in range(n)
+        ]
+        items = tuple(ReviewCard(card=c, original_index=i) for i, c in enumerate(cards))
+        return ReviewState(items=items, filter_status=CardStatus.PENDING)
+
+    def test_accept_under_filter_shows_next_pending(self) -> None:
+        from pdf2anki.tui.state import advance_after_review, set_card_status
+
+        state = self._pending_state(3)
+        # 先頭 (Q0) を accept → フィルタから消える
+        state = set_card_status(state, 0, CardStatus.ACCEPTED)
+        state = advance_after_review(state, CardStatus.ACCEPTED)
+        filtered = state.filtered_items()
+        # 次に見えるのは Q1（旧実装は Q2 に飛んでいた）
+        assert filtered[state.current_index % len(filtered)].card.front == "Q1"
+
+    def test_accept_last_remaining_card_empties_filter(self) -> None:
+        from pdf2anki.tui.state import advance_after_review, set_card_status
+
+        state = self._pending_state(1)
+        state = set_card_status(state, 0, CardStatus.ACCEPTED)
+        state = advance_after_review(state, CardStatus.ACCEPTED)
+        assert state.filtered_items() == []
+        assert state.current_index == 0
+
+    def test_no_filter_advances_normally(self) -> None:
+        from pdf2anki.tui.state import advance_after_review, set_card_status
+
+        state = self._pending_state(3)
+        state = state.__class__(items=state.items, filter_status=None)
+        state = set_card_status(state, 0, CardStatus.ACCEPTED)
+        state = advance_after_review(state, CardStatus.ACCEPTED)
+        assert state.current_index == 1
+
+    def test_navigate_wraps_by_filtered_count(self) -> None:
+        from pdf2anki.tui.state import navigate, set_card_status
+
+        state = self._pending_state(3)
+        # Q1 を accept → pending は Q0, Q2 の 2 枚
+        state = set_card_status(state, 1, CardStatus.ACCEPTED)
+        state = navigate(state, +1)  # pos 0 → 1
+        state = navigate(state, +1)  # pos 1 → 0 (2 枚で wrap)
+        assert state.current_index == 0

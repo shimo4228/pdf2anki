@@ -173,8 +173,7 @@ def build_user_prompt(
     sections: list[str] = []
 
     sections.append(
-        f"Generate up to {max_cards} Anki flashcards"
-        " from the following text."
+        f"Generate up to {max_cards} Anki flashcards from the following text."
     )
 
     if card_types:
@@ -189,9 +188,7 @@ def build_user_prompt(
         )
 
     if additional_tags:
-        sections.append(
-            f"Add these tags to all cards: {', '.join(additional_tags)}"
-        )
+        sections.append(f"Add these tags to all cards: {', '.join(additional_tags)}")
 
     sections.append(f"---\n\n{stripped}")
 
@@ -268,9 +265,7 @@ def build_section_prompt(
         )
 
     if additional_tags:
-        parts.append(
-            f"Add these tags to all cards: {', '.join(additional_tags)}"
-        )
+        parts.append(f"Add these tags to all cards: {', '.join(additional_tags)}")
 
     parts.append(f"---\n\n{stripped}")
 

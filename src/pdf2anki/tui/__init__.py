@@ -27,8 +27,6 @@ def launch_review(
         return result
 
     accepted_cards = [
-        item.card
-        for item in app.state.items
-        if item.status == CardStatus.ACCEPTED
+        item.card for item in app.state.items if item.status == CardStatus.ACCEPTED
     ]
     return result.model_copy(update={"cards": accepted_cards})

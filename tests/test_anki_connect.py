@@ -10,7 +10,6 @@ import pytest
 
 from pdf2anki.schemas import AnkiCard, BloomLevel, CardType
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -154,12 +153,14 @@ class TestEnsureDeck:
     def test_propagates_error(self) -> None:
         from pdf2anki.anki_connect import AnkiConnectError, ensure_deck
 
-        with patch(
-            "pdf2anki.anki_connect._invoke",
-            side_effect=AnkiConnectError("err"),
+        with (
+            patch(
+                "pdf2anki.anki_connect._invoke",
+                side_effect=AnkiConnectError("err"),
+            ),
+            pytest.raises(AnkiConnectError),
         ):
-            with pytest.raises(AnkiConnectError):
-                ensure_deck("bad")
+            ensure_deck("bad")
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +198,7 @@ class TestCardToNote:
         from pdf2anki.anki_connect import card_to_note
 
         note = card_to_note(reversible_card, deck_name="test")
-        assert note["modelName"] == "Basic (and target: reversed card)"
+        assert note["modelName"] == "Basic (and reversed card)"
 
     def test_tags_are_included(self, qa_card: AnkiCard) -> None:
         from pdf2anki.anki_connect import card_to_note
@@ -238,9 +239,7 @@ class TestPushCards:
             # ensure_deck returns deck id, addNotes returns note ids
             mock_invoke.side_effect = [123, [1001, 1002]]
 
-            result = push_cards(
-                [qa_card, qa_card], deck_name="test"
-            )
+            result = push_cards([qa_card, qa_card], deck_name="test")
 
         assert result.total == 2
         assert result.added == 2
@@ -253,9 +252,7 @@ class TestPushCards:
             # addNotes returns null for failed notes
             mock_invoke.side_effect = [123, [1001, None]]
 
-            result = push_cards(
-                [qa_card, qa_card], deck_name="test"
-            )
+            result = push_cards([qa_card, qa_card], deck_name="test")
 
         assert result.total == 2
         assert result.added == 1
@@ -264,12 +261,14 @@ class TestPushCards:
     def test_push_checks_anki_running(self, qa_card: AnkiCard) -> None:
         from pdf2anki.anki_connect import AnkiConnectError, push_cards
 
-        with patch(
-            "pdf2anki.anki_connect._invoke",
-            side_effect=AnkiConnectError("Connection refused"),
+        with (
+            patch(
+                "pdf2anki.anki_connect._invoke",
+                side_effect=AnkiConnectError("Connection refused"),
+            ),
+            pytest.raises(AnkiConnectError),
         ):
-            with pytest.raises(AnkiConnectError):
-                push_cards([qa_card], deck_name="test")
+            push_cards([qa_card], deck_name="test")
 
     def test_push_calls_ensure_deck(self, qa_card: AnkiCard) -> None:
         from pdf2anki.anki_connect import push_cards

@@ -24,7 +24,10 @@ from pdf2anki.schemas import AnkiCard, CardType, ExtractionResult
 
 _SCHEMA_VERSION = "1.0"
 
-_TSV_HEADER = "#separator:tab\n#html:true\n#tags column:3\n"
+# Column 4 carries the note type so one TSV can mix Basic and Cloze rows;
+# without it Anki imports every row under a single note type and renders
+# cloze syntax literally (or misreads Basic rows as Cloze).
+_TSV_HEADER = "#separator:tab\n#html:true\n#notetype column:4\n#tags column:3\n"
 
 
 # ============================================================
@@ -67,14 +70,17 @@ def _card_to_rows(
     tags_str = _build_tags(card, additional_tags)
     front = _escape_tsv_field(card.front)
     back = _escape_tsv_field(card.back)
+    notetype = "Cloze" if card.card_type == CardType.CLOZE else "Basic"
 
     if card.card_type == CardType.REVERSIBLE:
+        # Expanded into two Basic rows, so the stock reversed note type
+        # is not needed on import.
         return [
-            f"{front}\t{back}\t{tags_str}",
-            f"{back}\t{front}\t{tags_str}",
+            f"{front}\t{back}\t{tags_str}\t{notetype}",
+            f"{back}\t{front}\t{tags_str}\t{notetype}",
         ]
 
-    return [f"{front}\t{back}\t{tags_str}"]
+    return [f"{front}\t{back}\t{tags_str}\t{notetype}"]
 
 
 # ============================================================

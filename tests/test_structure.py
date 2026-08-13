@@ -809,3 +809,37 @@ class TestExtractCardsWithSections:
 
         assert mock_api.call_count == 0
         assert result.card_count == 0
+
+
+class TestParseCardsResponseCodeFences:
+    """カード本文にコードフェンスが含まれても JSON が壊れないこと。"""
+
+    _CARD = (
+        '[{"front": "What does ```python\\nprint(1)\\n``` output?", '
+        '"back": "1", "card_type": "qa", "bloom_level": "remember", '
+        '"tags": ["python"]}]'
+    )
+
+    def test_raw_json_with_inner_fence(self) -> None:
+        cards = parse_cards_response(self._CARD)
+        assert len(cards) == 1
+        assert "```python" in cards[0].front
+
+    def test_fenced_json_with_inner_fence(self) -> None:
+        wrapped = f"```json\n{self._CARD}\n```"
+        cards = parse_cards_response(wrapped)
+        assert len(cards) == 1
+        assert "```python" in cards[0].front
+
+    def test_prose_around_array(self) -> None:
+        text = f"Here are the cards:\n{self._CARD}\nLet me know!"
+        cards = parse_cards_response(text)
+        assert len(cards) == 1
+
+    def test_invalid_json_still_raises(self) -> None:
+        with pytest.raises(ValueError):
+            parse_cards_response("not json at all")
+
+    def test_non_array_json_raises(self) -> None:
+        with pytest.raises(ValueError, match="array"):
+            parse_cards_response('{"front": "single object"}')

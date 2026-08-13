@@ -394,3 +394,32 @@ class TestConstants:
 
     def test_max_megapixels(self) -> None:
         assert VISION_MAX_MEGAPIXELS == 1_150_000
+
+
+class TestExtractAndResizeLargeImage:
+    """VISION 上限超えの画像が例外なく縮小されること（旧実装は TypeError）。"""
+
+    def test_oversized_image_is_resized_not_dropped(self) -> None:
+        import pymupdf
+
+        from pdf2anki.image import VISION_MAX_DIMENSION, _extract_and_resize
+
+        src = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 2000, 2000))
+        src.clear_with(128)
+        png = src.tobytes("png")
+
+        doc = pymupdf.Document()
+        page = doc.new_page(width=500, height=500)
+        page.insert_image(pymupdf.Rect(0, 0, 500, 500), stream=png)
+        reopened = pymupdf.Document(stream=doc.tobytes(), filetype="pdf")
+        try:
+            xref = reopened.load_page(0).get_images(full=True)[0][0]
+            img_bytes, media_type, w, h = _extract_and_resize(reopened, xref)
+        finally:
+            reopened.close()
+            doc.close()
+
+        assert img_bytes
+        assert media_type == "image/png"
+        assert max(w, h) <= VISION_MAX_DIMENSION
+        assert w * h <= 1_150_000

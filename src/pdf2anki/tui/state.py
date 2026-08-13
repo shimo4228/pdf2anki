@@ -94,12 +94,32 @@ def edit_card(
 
 
 def navigate(state: ReviewState, delta: int) -> ReviewState:
-    """Return new state with current_index moved by delta (wrapping)."""
-    count = len(state.items)
+    """Return new state with current_index moved by delta (wrapping).
+
+    current_index addresses the *filtered* view (the UI renders
+    filtered_items()[current_index % len]), so wrapping must use the
+    filtered count — wrapping by the total count skips visible cards.
+    """
+    count = len(state.filtered_items())
     if count == 0:
         return state
     new_index = (state.current_index + delta) % count
     return replace(state, current_index=new_index)
+
+
+def advance_after_review(state: ReviewState, new_status: CardStatus) -> ReviewState:
+    """Move to the next visible card after accepting/rejecting.
+
+    When the active filter excludes the card's new status, the card has
+    just left the filtered view and its removal already advances the
+    view — only normalize the index. Otherwise step forward.
+    """
+    if state.filter_status is not None and state.filter_status != new_status:
+        count = len(state.filtered_items())
+        if count == 0:
+            return replace(state, current_index=0)
+        return replace(state, current_index=state.current_index % count)
+    return navigate(state, +1)
 
 
 _FILTER_CYCLE: list[CardStatus | None] = [

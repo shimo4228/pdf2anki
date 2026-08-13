@@ -760,13 +760,14 @@ class TestE2ETsvFormat:
         # Header lines
         assert lines[0] == "#separator:tab"
         assert lines[1] == "#html:true"
-        assert lines[2] == "#tags column:3"
+        assert lines[2] == "#notetype column:4"
+        assert lines[3] == "#tags column:3"
 
-        # Data rows: each should have exactly 2 tabs (3 columns)
-        data_lines = [ln for ln in lines[3:] if ln.strip()]
+        # Data rows: each should have exactly 3 tabs (4 columns)
+        data_lines = [ln for ln in lines[4:] if ln.strip()]
         for line in data_lines:
             parts = line.split("\t")
-            assert len(parts) == 3, f"Expected 3 columns, got {len(parts)}: {line}"
+            assert len(parts) == 4, f"Expected 4 columns, got {len(parts)}: {line}"
 
     @patch("pdf2anki.structure.anthropic.Anthropic")
     def test_cloze_card_has_empty_back(

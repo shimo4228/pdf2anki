@@ -11,6 +11,7 @@ from textual.widgets import Button, Static, TextArea
 from pdf2anki.tui.state import (
     CardStatus,
     ReviewState,
+    advance_after_review,
     cycle_filter,
     edit_card,
     navigate,
@@ -126,7 +127,7 @@ class ReviewApp(App[None]):
         idx = self._current_item_index()
         if idx is not None:
             self.state = set_card_status(self.state, idx, CardStatus.ACCEPTED)
-            self.state = navigate(self.state, +1)
+            self.state = advance_after_review(self.state, CardStatus.ACCEPTED)
             self._refresh_ui()
 
     def action_reject_card(self) -> None:
@@ -134,7 +135,7 @@ class ReviewApp(App[None]):
         idx = self._current_item_index()
         if idx is not None:
             self.state = set_card_status(self.state, idx, CardStatus.REJECTED)
-            self.state = navigate(self.state, +1)
+            self.state = advance_after_review(self.state, CardStatus.REJECTED)
             self._refresh_ui()
 
     def action_edit_card(self) -> None:

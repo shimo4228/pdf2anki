@@ -79,9 +79,8 @@ class TestSystemPrompt:
     def test_contains_good_bad_examples(self) -> None:
         """Wozniak principle: show good and bad card examples."""
         prompt_lower = SYSTEM_PROMPT.lower()
-        has_examples = (
-            ("good" in prompt_lower and "bad" in prompt_lower)
-            or ("良い" in SYSTEM_PROMPT and "悪い" in SYSTEM_PROMPT)
+        has_examples = ("good" in prompt_lower and "bad" in prompt_lower) or (
+            "良い" in SYSTEM_PROMPT and "悪い" in SYSTEM_PROMPT
         )
         assert has_examples
 
@@ -313,18 +312,14 @@ class TestBuildSectionPrompt:
     def test_bloom_filter_included(self) -> None:
         """Bloom level filter should appear in prompt."""
         section = _make_section()
-        prompt = build_section_prompt(
-            section, bloom_filter=["remember", "understand"]
-        )
+        prompt = build_section_prompt(section, bloom_filter=["remember", "understand"])
         assert "remember" in prompt
         assert "understand" in prompt
 
     def test_additional_tags_included(self) -> None:
         """Additional tags should appear in prompt."""
         section = _make_section()
-        prompt = build_section_prompt(
-            section, additional_tags=["仏教::インド", "哲学"]
-        )
+        prompt = build_section_prompt(section, additional_tags=["仏教::インド", "哲学"])
         assert "仏教::インド" in prompt
         assert "哲学" in prompt
 

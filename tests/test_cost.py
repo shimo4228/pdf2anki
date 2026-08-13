@@ -296,9 +296,7 @@ class TestBatchPricing:
         for model_id, batch_prices in BATCH_PRICING.items():
             std_prices = MODEL_PRICING.get(model_id)
             if std_prices is not None:
-                assert batch_prices["input"] == pytest.approx(
-                    std_prices["input"] * 0.5
-                )
+                assert batch_prices["input"] == pytest.approx(std_prices["input"] * 0.5)
                 assert batch_prices["output"] == pytest.approx(
                     std_prices["output"] * 0.5
                 )
@@ -335,5 +333,84 @@ class TestBatchPricing:
             output_tokens=0,
             batch=True,
         )
-        # Fallback input: $15/1M, batch: $7.50/1M
-        assert cost == pytest.approx(7.50)
+        # Fallback input: $10/1M, batch: $5.00/1M
+        assert cost == pytest.approx(5.00)
+
+
+class TestCurrentPricing:
+    """価格表が 2026-08 時点の公式価格と一致すること。"""
+
+    def test_haiku_pricing(self) -> None:
+        cost = estimate_cost(
+            model="claude-haiku-4-5-20251001",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+        )
+        assert cost == pytest.approx(1.00 + 5.00)
+
+    def test_opus_pricing(self) -> None:
+        cost = estimate_cost(
+            model="claude-opus-4-6",
+            input_tokens=1_000_000,
+            output_tokens=1_000_000,
+        )
+        assert cost == pytest.approx(5.00 + 25.00)
+
+
+class TestCacheTokenAccounting:
+    """prompt cache の write/read トークンがコストに計上されること。"""
+
+    def test_cache_write_billed_at_125_percent(self) -> None:
+        cost = estimate_cost(
+            model="claude-sonnet-4-5-20250929",
+            input_tokens=0,
+            output_tokens=0,
+            cache_creation_tokens=1_000_000,
+        )
+        assert cost == pytest.approx(3.00 * 1.25)
+
+    def test_cache_read_billed_at_10_percent(self) -> None:
+        cost = estimate_cost(
+            model="claude-sonnet-4-5-20250929",
+            input_tokens=0,
+            output_tokens=0,
+            cache_read_tokens=1_000_000,
+        )
+        assert cost == pytest.approx(3.00 * 0.1)
+
+    def test_record_response_cost_includes_cache_tokens(self) -> None:
+        from unittest.mock import Mock
+
+        from pdf2anki.cost import record_response_cost
+
+        response = Mock()
+        response.model = "claude-sonnet-4-5-20250929"
+        response.usage.input_tokens = 1000
+        response.usage.output_tokens = 500
+        response.usage.cache_creation_input_tokens = 2000
+        response.usage.cache_read_input_tokens = 8000
+
+        tracker = record_response_cost(CostTracker(), response)
+        record = tracker.records[0]
+        assert record.cache_creation_tokens == 2000
+        assert record.cache_read_tokens == 8000
+        assert record.cost_usd == pytest.approx(
+            (1000 / 1e6) * 3.00
+            + (500 / 1e6) * 15.00
+            + (2000 / 1e6) * 3.00 * 1.25
+            + (8000 / 1e6) * 3.00 * 0.1
+        )
+
+    def test_record_response_cost_tolerates_missing_cache_fields(self) -> None:
+        from unittest.mock import Mock
+
+        from pdf2anki.cost import record_response_cost
+
+        response = Mock()
+        response.model = "claude-sonnet-4-5-20250929"
+        response.usage.input_tokens = 1000
+        response.usage.output_tokens = 500
+        # Mock auto-attributes are not ints → treated as 0
+        tracker = record_response_cost(CostTracker(), response)
+        assert tracker.records[0].cache_creation_tokens == 0
+        assert tracker.records[0].cache_read_tokens == 0

@@ -133,10 +133,7 @@ class TestTsvHeader:
 
 def _data_lines(tsv: str) -> list[str]:
     """Extract non-comment, non-blank lines from TSV."""
-    return [
-        ln for ln in tsv.split("\n")
-        if not ln.startswith("#") and ln.strip()
-    ]
+    return [ln for ln in tsv.split("\n") if not ln.startswith("#") and ln.strip()]
 
 
 # ============================================================
@@ -147,15 +144,14 @@ def _data_lines(tsv: str) -> list[str]:
 class TestTsvRowFormat:
     """Test TSV row format: front<TAB>back<TAB>tags."""
 
-    def test_qa_card_has_three_tab_separated_fields(
-        self, qa_card: AnkiCard
-    ) -> None:
-        """QA card row should have exactly 3 tab-separated fields."""
+    def test_qa_card_has_four_tab_separated_fields(self, qa_card: AnkiCard) -> None:
+        """QA card row: front, back, tags, notetype の 4 フィールド。"""
         tsv = cards_to_tsv([qa_card])
         data_lines = _data_lines(tsv)
         assert len(data_lines) == 1
         fields = data_lines[0].split("\t")
-        assert len(fields) == 3
+        assert len(fields) == 4
+        assert fields[3] == "Basic"
 
     def test_qa_card_front_in_first_field(self, qa_card: AnkiCard) -> None:
         """Front text should appear in the first field."""
@@ -188,19 +184,15 @@ class TestTsvRowFormat:
 class TestTsvEscaping:
     """Test tab/newline escaping in TSV fields."""
 
-    def test_tabs_replaced_with_spaces(
-        self, card_with_special_chars: AnkiCard
-    ) -> None:
+    def test_tabs_replaced_with_spaces(self, card_with_special_chars: AnkiCard) -> None:
         """Tabs in content must be replaced with spaces to avoid TSV corruption."""
         tsv = cards_to_tsv([card_with_special_chars])
         data_lines = _data_lines(tsv)
-        # Each data row should have exactly 2 tabs (3 fields)
+        # Each data row should have exactly 3 tabs (4 fields)
         for line in data_lines:
-            assert line.count("\t") == 2
+            assert line.count("\t") == 3
 
-    def test_newlines_replaced_with_br(
-        self, card_with_special_chars: AnkiCard
-    ) -> None:
+    def test_newlines_replaced_with_br(self, card_with_special_chars: AnkiCard) -> None:
         """Newlines in content must be replaced with <br> for Anki HTML mode."""
         tsv = cards_to_tsv([card_with_special_chars])
         data_lines = _data_lines(tsv)
@@ -242,9 +234,7 @@ class TestTsvCloze:
 class TestTsvReversible:
     """Test reversible card expansion to 2 rows."""
 
-    def test_reversible_produces_two_rows(
-        self, reversible_card: AnkiCard
-    ) -> None:
+    def test_reversible_produces_two_rows(self, reversible_card: AnkiCard) -> None:
         """Reversible card should expand to 2 TSV rows (forward + reverse)."""
         tsv = cards_to_tsv([reversible_card])
         data_lines = _data_lines(tsv)
@@ -361,9 +351,7 @@ class TestTsvEncoding:
 class TestCardsToJson:
     """Test JSON output with metadata."""
 
-    def test_json_is_valid(
-        self, sample_extraction_result: ExtractionResult
-    ) -> None:
+    def test_json_is_valid(self, sample_extraction_result: ExtractionResult) -> None:
         """Output should be valid JSON."""
         output = cards_to_json(sample_extraction_result)
         parsed = json.loads(output)
@@ -442,9 +430,7 @@ class TestCardsToJson:
         output = cards_to_json(sample_extraction_result)
         assert "ニューラルネットワーク" in output
 
-    def test_json_is_indented(
-        self, sample_extraction_result: ExtractionResult
-    ) -> None:
+    def test_json_is_indented(self, sample_extraction_result: ExtractionResult) -> None:
         """JSON should be pretty-printed with indentation."""
         output = cards_to_json(sample_extraction_result)
         assert "\n  " in output  # indented
@@ -458,17 +444,13 @@ class TestCardsToJson:
 class TestWriteTsv:
     """Test TSV file writing."""
 
-    def test_write_tsv_creates_file(
-        self, tmp_path: Path, qa_card: AnkiCard
-    ) -> None:
+    def test_write_tsv_creates_file(self, tmp_path: Path, qa_card: AnkiCard) -> None:
         """write_tsv should create a .tsv file."""
         output_path = tmp_path / "output.tsv"
         write_tsv([qa_card], output_path)
         assert output_path.exists()
 
-    def test_write_tsv_content_matches(
-        self, tmp_path: Path, qa_card: AnkiCard
-    ) -> None:
+    def test_write_tsv_content_matches(self, tmp_path: Path, qa_card: AnkiCard) -> None:
         """Written file content should match cards_to_tsv output."""
         output_path = tmp_path / "output.tsv"
         write_tsv([qa_card], output_path)
@@ -476,9 +458,7 @@ class TestWriteTsv:
         expected = cards_to_tsv([qa_card])
         assert content == expected
 
-    def test_write_tsv_utf8_no_bom(
-        self, tmp_path: Path, qa_card: AnkiCard
-    ) -> None:
+    def test_write_tsv_utf8_no_bom(self, tmp_path: Path, qa_card: AnkiCard) -> None:
         """File should be UTF-8 without BOM."""
         output_path = tmp_path / "output.tsv"
         write_tsv([qa_card], output_path)

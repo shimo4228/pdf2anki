@@ -143,4 +143,11 @@ def load_config(config_path: str | None = None) -> AppConfig:
     # Strip runtime-only fields that should not come from YAML/env
     config_dict.pop("model_overridden", None)
 
+    # An explicit non-default model from YAML or PDF2ANKI_MODEL is an
+    # override: it must win over automatic Haiku/Sonnet routing, matching
+    # the documented precedence (env > YAML > defaults). The shipped
+    # config.yaml restates the default model, which keeps routing active.
+    if config_dict.get("model") not in (None, DEFAULT_MODEL):
+        config_dict["model_overridden"] = True
+
     return AppConfig(**config_dict)

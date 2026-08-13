@@ -31,17 +31,19 @@ from pdf2anki.section import Section
 # Fixtures
 # ============================================================
 
-SAMPLE_CARDS_JSON = json.dumps([
-    {
-        "front": "What is a neural network?",
-        "back": "A computational model inspired by biological neural networks.",
-        "card_type": "qa",
-        "bloom_level": "understand",
-        "tags": ["AI::basics"],
-        "related_concepts": ["deep learning"],
-        "mnemonic_hint": None,
-    },
-])
+SAMPLE_CARDS_JSON = json.dumps(
+    [
+        {
+            "front": "What is a neural network?",
+            "back": "A computational model inspired by biological neural networks.",
+            "card_type": "qa",
+            "bloom_level": "understand",
+            "tags": ["AI::basics"],
+            "related_concepts": ["deep learning"],
+            "mnemonic_hint": None,
+        },
+    ]
+)
 
 
 def _make_test_sections() -> list[Section]:
@@ -225,17 +227,13 @@ class TestCreateBatchRequests:
 
     def test_empty_sections_returns_empty(self) -> None:
         config = AppConfig()
-        requests = create_batch_requests(
-            [], document_title="Doc", config=config
-        )
+        requests = create_batch_requests([], document_title="Doc", config=config)
         assert requests == []
 
     def test_max_tokens_from_config(self) -> None:
         sections = _make_test_sections()
         config = AppConfig(max_tokens=4096)
-        requests = create_batch_requests(
-            sections, document_title="Doc", config=config
-        )
+        requests = create_batch_requests(sections, document_title="Doc", config=config)
         for req in requests:
             assert req.max_tokens == 4096
 
@@ -256,9 +254,7 @@ class TestCreateBatchRequests:
 
         sections = _make_test_sections()
         config = AppConfig()
-        requests = create_batch_requests(
-            sections, document_title="Doc", config=config
-        )
+        requests = create_batch_requests(sections, document_title="Doc", config=config)
         for req in requests:
             assert req.system_prompt == SYSTEM_PROMPT
 
@@ -473,12 +469,8 @@ class TestCollectBatchResults:
         mock_client = MagicMock()
 
         ok_entry = self._make_result_entry("section-0", SAMPLE_CARDS_JSON)
-        err_entry = self._make_result_entry(
-            "section-1", "", succeeded=False
-        )
-        mock_client.messages.batches.results.return_value = [
-            ok_entry, err_entry
-        ]
+        err_entry = self._make_result_entry("section-1", "", succeeded=False)
+        mock_client.messages.batches.results.return_value = [ok_entry, err_entry]
 
         results = collect_batch_results("msgbatch_123", client=mock_client)
         assert len(results) == 1
@@ -525,9 +517,7 @@ class TestCollectBatchResults:
 
         bad_entry = self._make_result_entry("section-0", "not valid json{{{")
         good_entry = self._make_result_entry("section-1", SAMPLE_CARDS_JSON)
-        mock_client.messages.batches.results.return_value = [
-            bad_entry, good_entry
-        ]
+        mock_client.messages.batches.results.return_value = [bad_entry, good_entry]
 
         results = collect_batch_results("msgbatch_123", client=mock_client)
         assert len(results) == 1
@@ -537,8 +527,7 @@ class TestCollectBatchResults:
         mock_client = MagicMock()
 
         entries = [
-            self._make_result_entry(f"section-{i}", SAMPLE_CARDS_JSON)
-            for i in range(3)
+            self._make_result_entry(f"section-{i}", SAMPLE_CARDS_JSON) for i in range(3)
         ]
         mock_client.messages.batches.results.return_value = entries
 

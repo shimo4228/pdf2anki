@@ -12,6 +12,7 @@ import logging
 import os
 import re
 import stat
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -108,10 +109,17 @@ def write_cache(cache_dir: Path, entry: CacheEntry) -> Path:
     cache_dir.chmod(stat.S_IRWXU)  # 0o700 owner-only
     cache_file = cache_dir / f"{entry.file_hash}.json"
     data = _serialize_entry(entry)
-    cache_file.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    os.chmod(cache_file, stat.S_IRUSR | stat.S_IWUSR)  # 0o600 owner-only
+    # Write to a temp file and atomically replace, so a concurrent reader
+    # never observes a partially written entry.
+    fd, tmp_name = tempfile.mkstemp(dir=cache_dir, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.chmod(tmp_name, stat.S_IRUSR | stat.S_IWUSR)  # 0o600 owner-only
+        os.replace(tmp_name, cache_file)
+    except BaseException:
+        os.unlink(tmp_name)
+        raise
     return cache_file
 
 

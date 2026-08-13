@@ -9,8 +9,10 @@ from __future__ import annotations
 import atexit
 import glob as glob_mod
 import logging
+import os
 import shutil
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -26,9 +28,15 @@ logger = logging.getLogger(__name__)
 
 _MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
 
-# Clean stale temp dirs from previous crashed sessions.
+# Clean stale temp dirs from previous crashed sessions. Only remove dirs
+# untouched for a day — a fresh dir may belong to another live instance.
+_STALE_TEMP_AGE_SECONDS = 24 * 60 * 60
 for _old in glob_mod.glob(f"{tempfile.gettempdir()}/pdf2anki_web_*"):
-    shutil.rmtree(_old, ignore_errors=True)
+    try:
+        if time.time() - os.path.getmtime(_old) > _STALE_TEMP_AGE_SECONDS:
+            shutil.rmtree(_old, ignore_errors=True)
+    except OSError:
+        continue
 
 # Session-scoped temp dir; cleaned up on process exit.
 _TEMP_DIR = tempfile.mkdtemp(prefix="pdf2anki_web_")
@@ -54,6 +62,9 @@ def _build_config_from_ui(
     base = load_config(None)
     overrides: dict[str, Any] = {
         "model": model,
+        # A non-default dropdown choice must win over automatic model
+        # routing; picking the default keeps routing active.
+        "model_overridden": model != base.model or base.model_overridden,
         "cards_max_cards": int(max_cards),
         "cost_budget_limit": budget,
         "vision_enabled": vision,
@@ -61,6 +72,9 @@ def _build_config_from_ui(
     if quality == "off":
         overrides["quality_enable_critique"] = False
         overrides["quality_confidence_threshold"] = 0.0
+    elif quality == "basic":
+        # basic = heuristic checks only; no paid LLM critique
+        overrides["quality_enable_critique"] = False
     elif quality == "full":
         overrides["quality_enable_critique"] = True
     return base.model_copy(update=overrides)
