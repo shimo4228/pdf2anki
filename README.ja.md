@@ -2,24 +2,18 @@ Language: [English](README.md) | 日本語
 
 # pdf2anki
 
-PDF/テキスト/Markdown から高品質な Anki フラッシュカードを自動生成する CLI ツール。Claude AI を活用。
+pdf2anki は、PDF・テキスト・Markdown のファイルから Anthropic の Claude で Anki のカードを作るコマンドラインツールです。文書を読みながら Anki で学ぶ人に向けています。既定ではエクスポート前に全カードを採点し、`--quality full` を付けると点の低いカードを LLM critique に回して、改善・分割・削除します。
 
-## 特徴
+LLM によるカード生成が生む問題（壊れた JSON、ばらつくカードの品質、見えないコスト）への防御を、LLM による構造化抽出、認知科学（SuperMemo の作者 Wozniak によるカード作りの 20 原則）、プロンプト変更をキーワード照合で測る評価を組み合わせて試すために作った実践プロジェクトです。
 
-- **品質保証パイプライン**: 6 次元の信頼度スコアリング + LLM 批評による自動改善
-- **Wozniak の知識定式化 20 原則**: 認知科学に基づくカード生成
-- **8 種類のカードタイプ**: QA, 用語定義, 要約, 穴埋め, 可逆, 順序, 比較対照, 画像穴埋め
-- **Bloom の分類法**: 全カードに認知レベル (remember 〜 create) を付与
-- **画像認識カード生成**: PDF 内の画像を検出・抽出し、Claude Vision API で画像付きカードを生成
-- **インタラクティブレビュー TUI**: エクスポート前にターミナル UI でカードを確認・承認・却下・編集
-- **セクション分割処理**: 見出しベースの文書分割 + パンくずコンテキストで高品質なカード生成
-- **テキスト抽出キャッシュ**: SHA-256 ハッシュで同一ファイルの再抽出をスキップ
-- **Batch API**: 非同期バルク処理で 50% コスト削減
-- **プロンプト評価フレームワーク**: キーワードベースのマッチングで Recall/Precision/F1 を測定
-- **コスト追跡**: セッション単位の API コスト監視、予算上限設定可能
-- **OCR 対応**: 画像が多い PDF 向けの OCR フォールバック (ocrmypdf)
+> [!NOTE]
+> `convert` と Web UI は文書のテキスト（`--vision` のときは画像の多いページに埋め込まれた画像も）を、`eval` はラベル付きデータセットのテキストを Anthropic API に送ります。どれも自分の有料の `ANTHROPIC_API_KEY` が必要です。実行ごとに予算上限（既定 1.00 USD）で止まります。`preview` は API を呼びません。
+
+作った経緯と、後日このコードを監査した記録は[著者のほかの仕事](#著者のほかの仕事)にあります。
 
 ## インストール
+
+必要なのは Python 3.12+、[uv](https://docs.astral.sh/uv/)、Anthropic API キー（有料）です。OCR（`--ocr`）には、システムに Tesseract と言語パックも必要です（[Runbook](docs/RUNBOOK.md)、英語）。
 
 ```bash
 git clone https://github.com/shimo4228/pdf2anki.git
@@ -27,12 +21,17 @@ cd pdf2anki
 uv sync --all-extras
 ```
 
+`uv sync` は `pdf2anki` コマンドを `.venv` に入れます。`uv run pdf2anki ...` で実行するか、`source .venv/bin/activate` で一度有効にしてください。以下の例は有効にした状態を前提にしています。
+
 ### 環境設定
 
+pdf2anki は API キーと下の 2 つの `PDF2ANKI_` 変数を環境変数から読み、`.env` ファイルは読み込みません。実行するシェルでキーを export してください。
+
 ```bash
-cp .env.example .env
-# .env を編集して ANTHROPIC_API_KEY を設定
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+変数を `.env` ファイル（`.env.example` からコピー）に置く場合は、先に `set -a; source .env; set +a` でシェルに読み込むか、`uv run --env-file .env pdf2anki ...` で実行してください。
 
 | 変数 | 必須 | デフォルト | 説明 |
 |------|------|-----------|------|
@@ -40,9 +39,28 @@ cp .env.example .env
 | `PDF2ANKI_MODEL` | No | `claude-sonnet-4-5-20250929` | Claude モデルの上書き |
 | `PDF2ANKI_BUDGET_LIMIT` | No | `1.00` | API コスト予算上限 (USD) |
 
+### 最初の実行
+
+```bash
+pdf2anki preview input.pdf     # テキスト抽出のみ。API は呼ばない
+pdf2anki convert input.pdf     # PDF と同じ場所に input.tsv を書き出す
+```
+
+`convert` は集計表（生成カード数、API 呼び出し数、合計コスト、出力先）を表示します。TSV は 1 行 1 カード（可逆カードは表→裏と裏→表の 2 行）で、表、裏、タグ、ノートタイプの列と Anki のインポート用ヘッダ（`#separator:tab`、`#html:true`、タグとノートタイプの列番号）を持つので、Anki の「ファイル > 読み込む」で取り込めます。起動中の Anki へ `--push` で直接送ることもできます（ほかのプログラムから起動中の Anki にカードを追加できるようにする AnkiConnect アドオンが必要です）。
+
+## 特徴
+
+- **品質保証パイプライン**: 既定のレベル（`--quality basic`）では、各カードを 6 次元（表の品質、裏の品質、カードタイプ適合、Bloom レベル適合、タグ品質、原子性 = 1 枚に 1 つの事実）で採点し、重複しているらしいカードに印を付けます。追加の API 呼び出しはしません。`--quality full` では、重み付きの点が信頼度の閾値（0〜1 の尺度で既定 0.90）を下回るカードを LLM critique（Claude をもう一度呼んでカードを見直させる段）に送り、改善・分割・削除します。`--quality off` はどちらも行いません
+- **Wozniak の知識定式化 20 原則**: プロンプトが最小情報の原則を当て、1 枚のカードで 1 つの概念を問うよう求めます
+- **8 種類のカードタイプ**: QA, 用語定義, 要約, 穴埋め, 可逆, 順序, 比較対照, 画像穴埋め（図の一部を隠した様子を文章で説明し、そこに何が入るかを問うカード。画像そのものはカードに埋め込まれません。`--vision` のプロンプトはこのカードを求めます）
+- **Bloom の分類法**: 全カードに認知レベル (remember 〜 create) を付与し、`--bloom-filter` で選んだレベルだけを残せます
+- **セクション分割処理**: 文書を見出しで分け、各セクションを見出しの階層（例: `本 > 部 > 章`）を文脈として付けて Claude に送ります。この階層はカードの階層タグにもなります
+
 ## 使い方
 
-### convert (変換)
+### convert
+
+PDF・テキスト・Markdown をカードに変換します。
 
 ```bash
 # 基本変換（PDF → TSV）
@@ -51,26 +69,8 @@ pdf2anki convert input.pdf
 # 出力先を指定
 pdf2anki convert input.pdf -o output.tsv
 
-# JSON 出力
-pdf2anki convert input.pdf --format json
-
 # TSV と JSON 両方
 pdf2anki convert input.pdf --format both
-
-# 品質保証パイプライン有効（フル）
-pdf2anki convert input.pdf --quality full
-
-# インタラクティブレビュー
-pdf2anki convert input.pdf --review
-
-# 画像認識カード生成（Vision API）
-pdf2anki convert input.pdf --vision
-
-# 抽出キャッシュを有効化
-pdf2anki convert input.pdf --cache
-
-# Batch API で 50% コスト削減
-pdf2anki convert input.pdf --batch
 
 # ディレクトリ一括処理
 pdf2anki convert ./docs/
@@ -81,9 +81,6 @@ pdf2anki convert input.pdf --tags "chapter1,important" --focus "機械学習"
 # カード数と予算を制限
 pdf2anki convert input.pdf --max-cards 20 --budget-limit 0.50
 
-# OCR 有効化（画像が多い PDF 向け）
-pdf2anki convert input.pdf --ocr --lang jpn+eng
-
 # オプションの組み合わせ
 pdf2anki convert input.pdf --cache --vision --review --quality full --format both
 ```
@@ -93,34 +90,37 @@ pdf2anki convert input.pdf --cache --vision --review --quality full --format bot
 | `-o, --output` | 自動 | 出力先ファイルまたはディレクトリ |
 | `--format` | `tsv` | 出力形式: `tsv`, `json`, `both` |
 | `--quality` | `basic` | 品質レベル: `off`, `basic`, `full` |
-| `--model` | 設定値 | Claude モデル名 |
+| `--model` | 自動 (Sonnet、短いセクションは Haiku) | Claude モデル名 |
 | `--max-cards` | `50` | 最大カード生成数 |
 | `--tags` | - | 追加タグ (カンマ区切り) |
 | `--focus` | - | フォーカストピック (カンマ区切り) |
-| `--card-types` | 全 7 種 | 生成するカードタイプ (カンマ区切り) |
+| `--card-types` | `qa,term_definition,summary_point,reversible,sequence,compare_contrast` | 生成するカードタイプ (カンマ区切り)。`image_occlusion` を加えると画像穴埋めを求める。`--vision` もこのカードを求める |
 | `--bloom-filter` | 全て | 含める Bloom レベル (カンマ区切り) |
 | `--budget-limit` | `1.00` | 予算上限 (USD) |
-| `--review` | off | インタラクティブ TUI でカードレビュー |
-| `--vision` | off | 画像認識カード生成を有効化 |
-| `--cache` / `--no-cache` | off | 抽出キャッシュを有効化 |
+| `--review` | off | エクスポート前にターミナル UI でカードを確認・承認・却下・編集 |
+| `--vision` / `--no-vision` | off | 画像の多いページに埋め込まれた画像について、Claude Vision API で文章のカードを生成 (その画像を API に送る。抽出した画像を出力先の横の `_media/` フォルダにも書き出すが、TSV はそれを参照しない) |
+| `--cache` / `--no-cache` | off | 内容が変わっていないファイルの再抽出を省く (SHA-256 ハッシュ) |
+| `--cache-clear` | off | 処理の前に抽出キャッシュを消す |
 | `--batch` | off | Batch API を使用 (50% 割引, 非同期) |
-| `--ocr` | off | OCR を有効化 |
+| `--ocr` | off | 画像が多い PDF 向けの OCR フォールバック (ocrmypdf、Tesseract が必要) |
 | `--lang` | `jpn+eng` | OCR 言語 |
-| `--config` | `config.yaml` | 設定 YAML ファイルパス |
+| `--push` | off | AnkiConnect アドオン経由で起動中の Anki デスクトップへカードを送る (ローカル, `127.0.0.1:8765`) |
+| `--deck` | `pdf2anki` | `--push` の送り先デッキ名 |
+| `--config` | なし (組み込みの設定) | 設定 YAML のパス。同梱の `config.yaml` など |
 | `--verbose` | off | デバッグログ |
 
-### preview (プレビュー)
+### preview
 
-API を呼ばずにテキスト抽出のみ実行（ドライラン）。
+プレビューです。API を呼ばずにテキスト抽出だけを実行します（ドライラン）。
 
 ```bash
 pdf2anki preview input.pdf
 pdf2anki preview input.pdf --ocr
 ```
 
-### eval (評価)
+### eval
 
-ラベル付きデータセットに対してプロンプト品質を測定。
+評価です。ラベル付きデータセットに対してプロンプトの品質を測ります。期待カードごとにキーワードを持ち、そのキーワードが十分に現れた生成カードを一致とみなして、Recall・Precision・F1 で集計します。測るのはキーワードの網羅で、カードが学習にどれだけ役立つかではありません。
 
 ```bash
 # 評価実行
@@ -130,71 +130,50 @@ pdf2anki eval --dataset evals/dataset.yaml
 pdf2anki eval --dataset evals/dataset.yaml --output eval-report.json
 ```
 
+### Web UI
+
+同じ変換を行う Gradio の画面です。`uv sync --all-extras`（`web` extra）で入ります。
+
+```bash
+pdf2anki web                   # http://127.0.0.1:7860
+```
+
+Web UI には認証がありません。`--host` で別のホストに公開すると、そのネットワークの誰でも Web UI を使えるので、自分の API 予算を他人に使われます。
+
 ## 設定
 
-設定の優先順位: **環境変数 > config.yaml > デフォルト値**
+設定の優先順位は **CLI フラグ > 環境変数 > 設定 YAML > デフォルト値** です。設定 YAML は `--config` で渡したときだけ読まれ、渡さなければ組み込みのデフォルト値で動きます。
 
-モデル、品質閾値、カードタイプ、コスト制限、キャッシュ、画像認識、OCR 設定など全オプションは [`config.yaml`](config.yaml) を参照。
-
-## アーキテクチャ
-
-```
-[入力] PDF / TXT / MD
-  ↓
-[Step 1] テキスト抽出 (pymupdf4llm + OCR フォールバック + キャッシュ)
-  ↓
-[Step 2] セクション分割 (見出しベース + パンくずコンテキスト)
-  ↓
-[Step 3] LLM 構造化抽出 (Claude API + 画像は Vision API)
-  ↓
-[Step 4] 品質保証 (6 次元信頼度スコア → LLM 批評)
-  ↓
-[Step 5] クロスセクション重複検出
-  ↓
-[Step 6] インタラクティブレビュー TUI (オプション)
-  ↓
-[Step 7] 出力 (TSV / JSON)
-```
-
-### 品質パイプライン
-
-カードは 6 次元 (front 品質, back 品質, カードタイプ適合, Bloom レベル適合, タグ品質, 原子性) でスコアリング。信頼度閾値を下回るカードは LLM 批評に送られ、改善・分割・削除される。
-
-## プロジェクト構成
-
-```
-src/pdf2anki/
-  main.py        # CLI (typer): convert, preview, eval コマンド
-  config.py      # YAML + 環境変数の設定ローダー
-  schemas.py     # Pydantic モデル (AnkiCard, ExtractionResult 等)
-  extract.py     # テキスト抽出 (pymupdf4llm + OCR)
-  section.py     # 見出しベースのセクション分割
-  structure.py   # LLM 構造化カード抽出
-  prompts.py     # Wozniak ベースのプロンプトテンプレート
-  quality/       # 品質保証パイプライン (ヒューリスティック, 重複検出, 批評)
-  convert.py     # TSV/JSON 出力変換
-  cost.py        # API コスト追跡
-  service.py     # サービス層オーケストレーション
-  cache.py       # SHA-256 抽出キャッシュ
-  image.py       # PDF 画像検出・抽出
-  vision.py      # Claude Vision API 統合
-  batch.py       # Batch API 対応
-  tui/           # インタラクティブカードレビュー (Textual)
-  eval/          # プロンプト評価フレームワーク
-tests/           # 624 テスト, カバレッジ 92%+
-```
-
-## 必要環境
-
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-- Anthropic API キー
+同梱の [`config.yaml`](config.yaml) には、モデル、品質の閾値、出力、カードタイプ（組み込みの既定に穴埋めを加えています）、コスト上限、OCR、キャッシュの設定があります。`pdf2anki convert input.pdf --config config.yaml` のように渡して使います。
 
 ## ドキュメント
 
-- [Contributing Guide](docs/CONTRIB.md) - 開発ワークフロー、テスト、CLI リファレンス
-- [Runbook](docs/RUNBOOK.md) - デプロイ、トラブルシューティング、よくある問題
+- [Contributing Guide](docs/CONTRIB.md)（英語） - 開発ワークフロー、テスト
+- [Runbook](docs/RUNBOOK.md)（英語） - デプロイ、トラブルシューティング、よくある問題
+
+## 著者のほかの仕事
+
+- **[LLM の出力は信用するな — Claude API で PDF→Anki 自動生成 CLI を作って学んだ 6 つの防御策](https://zenn.dev/shimo4228/articles/ecc-journey-part2)**（[English](https://dev.to/shimo4228/never-trust-llm-output-6-defenses-from-building-a-pdf-to-anki-cli-43mo)）: pdf2anki がカードを 1 枚ずつ検証し、LLM critique の前に採点し、コストに上限を置き、セクション単位で分割する理由を、作る途中で壊れたことから説明しています。
+- **[半年前のAIコードは現世代レビューに耐えるか — 実測25件の仕分け](https://zenn.dev/shimo4228/articles/ai-code-half-year-audit)**（[English](https://dev.to/shimo4228/can-six-month-old-ai-code-survive-todays-review-a-25-bug-triage-4o6d)）: 約半年前に書かれたこのコードを、2026 年 8 月に Claude Fable 5 と GPT-5.6-Sol（Codex CLI 経由）の 2 系統で監査した記録です。設計は持ちこたえ、可逆カードの Anki への送信と大きな画像の抽出は、続く修正まで一度も正しく動いていませんでした。
+- **[code-and-llm-collaboration](https://github.com/shimo4228/code-and-llm-collaboration)**（英語）: 決定論的なコードと LLM 呼び出しを 1 本のパイプラインに重ねる 4 つのパターンです。pdf2anki の「採点してから LLM critique」もその 1 つに当たります。
+- **[llm-as-judge](https://github.com/shimo4228/llm-as-judge)**（英語）: 二値のチェックを証拠にして 1 つの判定名を出す LLM の判定器の設計です。critique の段をさらに作り込みたいときに。
+- **[shimo4228](https://github.com/shimo4228/shimo4228)**: 著者のハブです。5 つの長期プロジェクトとその DOI、Claude Code 用のツールがまとまっています。
 
 ## ライセンス
 
-AGPL-3.0 License - 詳細は [LICENSE](LICENSE) を参照。
+AGPL-3.0 License です。詳細は [LICENSE](LICENSE) をご覧ください。
+
+<details>
+<summary>ツールと AI アシスタント向けの資料</summary>
+
+pdf2anki は、PDF・プレーンテキスト・Markdown のファイルを Anthropic の Claude API で Anki のカードに変える、文書から Anki で学ぶ人向けのコマンドラインツールです。LLM によるカード生成は、壊れた JSON、ばらつくカードの品質、見えないコストを生みます。著者はそれぞれへの防御を試すためにこのツールを作りました。カードごとのスキーマ検証（部分的な成功を受け入れる）、Wozniak の知識定式化 20 原則に基づくカードの規則、品質パイプライン、予算の上限、プロンプト変更をキーワード照合で測る評価です。
+
+基本的な事実: ライセンスは AGPL-3.0（`pyproject.toml` では `AGPL-3.0-or-later`）です。Python 3.12+ を uv で管理し、CLI は Typer と Rich、レビュー TUI は Textual、任意の Web UI は Gradio、PDF の抽出は PyMuPDF と pymupdf4llm、任意の OCR は ocrmypdf で動きます。状態: このリポジトリで著者が手で管理している実践プロジェクトで、最新の変更は 2026 年 8 月のコード監査に続く修正です。著者の長期プロジェクトのどれにも属さない単独のツールです。有料の `ANTHROPIC_API_KEY` が必要です。`convert` と Web UI は文書のテキストを、`--vision` では画像の多いページに埋め込まれた画像も、`eval` はラベル付きデータセットのテキストを Anthropic API に送り、`preview` はローカルだけで動きます。既定のモデルは `claude-sonnet-4-5-20250929` で、モデルを明示しない限り、10,000 文字未満でカードの要求数が 30 枚未満のセクションは自動で Claude Haiku に回ります。実行ごとに予算上限（設定しなければ 1.00 USD）で止まります。`--push` は `127.0.0.1:8765` の AnkiConnect を通じてローカルの Anki とだけ通信します。
+
+各カードは、表、裏、8 種類のカードタイプ（qa、term_definition、summary_point、cloze、reversible、sequence、compare_contrast、image_occlusion）の 1 つ、Bloom の分類の認知レベル、タグを持ちます。`convert` は、テキスト抽出（pymupdf4llm、OCR フォールバックと任意のキャッシュ付き）、見出しによるセクション分割、Claude による構造化カード抽出（PDF に `--vision` を付けると、全文と画像を 1 回の Claude Vision リクエストに送る処理がセクション分割による抽出に代わり、Haiku への振り分けも行いません）、品質パイプライン、任意の TUI レビュー、TSV または JSON の出力の順に進みます。既定のレベル（`--quality basic`）では品質パイプラインが 6 次元で採点し、重複しているらしいカードに印を付けます。`--quality full` では 6 次元の重み付きの点が信頼度の閾値（既定 0.90）を下回るカードを LLM critique に送って、改善・分割・削除します。`--quality off` は品質パイプラインを通しません。
+
+例: `pdf2anki convert input.pdf --quality full` は PDF と同じ場所に `input.tsv` を書き出します。1 行 1 カード（可逆カードは表→裏と裏→表の 2 行）で、表、裏、タグ、ノートタイプの列と Anki のインポート用ヘッダを持ち、各カードに `bloom::<level>` タグが付きます。画面には、生成カード数、API 呼び出し数、合計コスト、合格・critique・削除のカード数、出力先が表示されます。
+
+参照先: [`config.yaml`](config.yaml) は設定の見本で、`--config` で渡したときだけ読まれ、画像認識と Batch API の項目はありません。開発とテストは [docs/CONTRIB.md](docs/CONTRIB.md)（英語）、トラブルシューティング（OCR を含む）は [docs/RUNBOOK.md](docs/RUNBOOK.md)（英語）、`pdf2anki eval` が使うラベル付きデータは [evals/dataset.yaml](evals/dataset.yaml) にあります。著者のほかの仕事の一覧は https://github.com/shimo4228/shimo4228 にあります。
+
+</details>
