@@ -353,3 +353,28 @@ class TestCacheEntryImmutability:
     def test_slots(self, sample_entry: CacheEntry) -> None:
         with pytest.raises((AttributeError, TypeError)):
             sample_entry.extra = "value"  # type: ignore[attr-defined]
+
+
+class TestCorruptedCache:
+    def test_wrong_typed_document_is_miss(self, tmp_path: Path) -> None:
+        (tmp_path / f"{_HASH_A}.json").write_text(
+            '{"document": [1, 2, 3], "file_hash": "x", "source_path": "y"}',
+            encoding="utf-8",
+        )
+        assert read_cache(tmp_path, _HASH_A) is None
+
+    def test_scalar_sections_is_miss(self, tmp_path: Path) -> None:
+        payload = {
+            "document": {
+                "source_path": "t.txt",
+                "text": "hi",
+                "chunks": 42,
+                "file_type": "txt",
+                "used_ocr": False,
+                "sections": [],
+            },
+            "file_hash": _HASH_A,
+            "source_path": "t.txt",
+        }
+        (tmp_path / f"{_HASH_A}.json").write_text(json.dumps(payload), encoding="utf-8")
+        assert read_cache(tmp_path, _HASH_A) is None
