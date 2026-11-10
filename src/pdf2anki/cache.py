@@ -88,7 +88,9 @@ def read_cache(cache_dir: Path, file_hash: str) -> CacheEntry | None:
         raw = cache_file.read_text(encoding="utf-8")
         data = json.loads(raw)
         return _deserialize_entry(data)
-    except (json.JSONDecodeError, ValueError, KeyError):
+    except (json.JSONDecodeError, ValueError, KeyError, TypeError, AttributeError):
+        # Structurally corrupt JSON (wrong types where mappings are expected)
+        # is a cache miss, not a crash.
         logger.warning("Corrupted cache entry: %s", cache_file)
         return None
 
